@@ -298,5 +298,19 @@ export async function loadToro() {
     if (pose === "wave" || pose === "walk") groundFeet();
   }
 
-  return { root, setExpression, animate };
+  function applyPetting(pose, amount = 1) {
+    const x = pose.x * amount;
+    const y = pose.y * amount;
+    const pressure = pose.pressure * amount;
+    rotateJoint(body.neck, y * 0.025, x * 0.035, -x * 0.025);
+    rotateJoint(body.head, y * 0.11 + pressure * 0.025, x * 0.14, -x * 0.13);
+  }
+
+  return {
+    root,
+    head: root.getObjectByName("toro_head"),
+    setExpression,
+    animate,
+    applyPetting,
+  };
 }

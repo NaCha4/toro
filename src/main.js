@@ -9,6 +9,7 @@ import {
   CLOSEUP_TORO_Z,
 } from "./greeting.js";
 import { updateCameraFraming } from "./camera-framing.js";
+import { createPettingMotion, bindHeadPetting } from "./petting.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
@@ -112,6 +113,7 @@ async function startViewer() {
   resize();
 
   const toro = await loadToro();
+  const petting = createPettingMotion();
   toro.root.scale.multiplyScalar(0.91);
   toro.root.position.z = START_TORO_Z;
   scene.add(toro.root);
@@ -140,6 +142,7 @@ async function startViewer() {
     number.setAttribute("aria-hidden", "true");
     button.append(preview, number);
     button.addEventListener("click", () => {
+      petting.cancel();
       state.expression = expression.id;
       toro.setExpression(state.expression);
       selectButton("expression", state.expression);
@@ -150,6 +153,7 @@ async function startViewer() {
   document.querySelectorAll("[data-pose]").forEach((button) => {
     button.disabled = true;
     button.addEventListener("click", () => {
+      petting.cancel();
       state.pose = button.dataset.pose;
       selectButton("pose", state.pose);
     });
@@ -157,6 +161,7 @@ async function startViewer() {
 
   const viewer = document.querySelector("#viewer");
   const hint = document.querySelector("#tap-hint");
+  const petHint = document.querySelector("#pet-hint");
   const previewButtons = document.querySelectorAll(
     "[data-pose], [data-expression]",
   );
@@ -172,9 +177,11 @@ async function startViewer() {
     greeting: "2번 표정으로 인사하는 토로",
     pause: "1번 표정으로 잠시 기다리는 토로",
     approaching: "카메라 앞으로 걸어오는 토로",
-    closeup: "카메라 가까이에서 바라보는 토로 얼굴",
+    closeup:
+      "카메라 가까이에서 바라보는 토로 얼굴. 머리를 누른 채 움직여 쓰다듬어 주세요.",
   };
   const greeting = createGreetingSequence((phase) => {
+    petting.setEnabled(phase === "closeup");
     state.pose = phasePoses[phase];
     state.expression =
       phase === "turning" || phase === "greeting" ? "smile" : "normal";
@@ -206,6 +213,23 @@ async function startViewer() {
   renderer.domElement.addEventListener("pointerdown", (event) => {
     if (event.isPrimary !== false && event.button === 0) beginGreeting();
   });
+  bindHeadPetting({
+    canvas: renderer.domElement,
+    head: toro.head,
+    camera,
+    motion: petting,
+    canInteract: () =>
+      greeting.phase === "closeup" &&
+      document.documentElement.dataset.viewerState === "ready" &&
+      !document.hidden,
+    onStroke: () => {
+      state.expression = "content";
+      state.pose = "stand";
+      toro.setExpression(3);
+      selectButton("expression", state.expression);
+      selectButton("pose", state.pose);
+    },
+  });
   hint.addEventListener("click", beginGreeting);
   renderer.domElement.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -231,10 +255,13 @@ async function startViewer() {
       return;
     const delta = timer.getDelta();
     activeTime += delta;
+    petting.update(delta);
     greeting.update(delta, reducedMotion.matches);
     closeupProgress = greeting.approachProgress;
     viewer.dataset.greetingState = greeting.phase;
     hint.hidden = !greeting.hintVisible;
+    petHint.hidden = !petting.hintVisible;
+    viewer.dataset.pettingState = petting.rubbing ? "rubbing" : "idle";
     toro.animate(
       activeTime,
       state.pose,
@@ -244,6 +271,7 @@ async function startViewer() {
         : 1,
       closeupProgress,
     );
+    toro.applyPetting(petting.pose, reducedMotion.matches ? 0.55 : 1);
     toro.root.position.z = THREE.MathUtils.lerp(
       START_TORO_Z,
       CLOSEUP_TORO_Z,

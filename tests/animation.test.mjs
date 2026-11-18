@@ -33,6 +33,17 @@ async function loadModel() {
   );
 }
 
+async function loadTestToro() {
+  const model = await loadModel();
+  const originalLoad = GLTFLoader.prototype.loadAsync;
+  GLTFLoader.prototype.loadAsync = async () => model;
+  try {
+    return await loadToro();
+  } finally {
+    GLTFLoader.prototype.loadAsync = originalLoad;
+  }
+}
+
 function worldVertices(mesh) {
   return Array.from(
     { length: mesh.geometry.attributes.position.count },
@@ -73,15 +84,7 @@ test("added wrists preserve the supplied model's bind pose and skin weights", as
 });
 
 test("the greeting keeps feet grounded and restores the neutral pose", async () => {
-  const model = await loadModel();
-  const originalLoad = GLTFLoader.prototype.loadAsync;
-  GLTFLoader.prototype.loadAsync = async () => model;
-  let toro;
-  try {
-    toro = await loadToro();
-  } finally {
-    GLTFLoader.prototype.loadAsync = originalLoad;
-  }
+  const toro = await loadTestToro();
   toro.root.scale.multiplyScalar(0.91);
   toro.root.position.z = 0.9;
   toro.animate(0, "stand", false);
@@ -146,6 +149,42 @@ test("the greeting keeps feet grounded and restores the neutral pose", async () 
   });
   assert.equal(toro.root.position.x, 0);
   assert.equal(toro.root.position.y, 0);
+});
+
+test("head petting follows the stroke without moving the legs or model root", async () => {
+  const toro = await loadTestToro();
+  toro.root.scale.multiplyScalar(0.91);
+  toro.root.position.z = CLOSEUP_TORO_Z;
+  toro.animate(0, "stand", true, 1, 1);
+  toro.root.updateMatrixWorld(true);
+  const baseline = worldVertices(toro.head);
+  const baselineCenter = baseline
+    .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+    .divideScalar(baseline.length);
+  const leg = toro.root.getObjectByName("Bip01_toro_L_Thigh");
+  const legRotation = leg.quaternion.toArray();
+  const rootPosition = toro.root.position.toArray();
+  toro.applyPetting({ x: 1, y: 0.3, pressure: 1 });
+  toro.root.updateMatrixWorld(true);
+  const right = worldVertices(toro.head)
+    .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+    .divideScalar(baseline.length);
+  assert.ok(right.x > baselineCenter.x + 0.05);
+  assert.deepEqual(leg.quaternion.toArray(), legRotation);
+  assert.deepEqual(toro.root.position.toArray(), rootPosition);
+  toro.animate(0, "stand", true, 1, 1);
+  toro.applyPetting({ x: -1, y: 0, pressure: 1 });
+  toro.root.updateMatrixWorld(true);
+  const left = worldVertices(toro.head)
+    .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+    .divideScalar(baseline.length);
+  assert.ok(left.x < baselineCenter.x - 0.05);
+  toro.animate(0, "stand", true, 1, 1);
+  toro.applyPetting({ x: 0, y: 0, pressure: 0 });
+  toro.root.updateMatrixWorld(true);
+  worldVertices(toro.head).forEach((point, index) =>
+    assert.ok(point.distanceTo(baseline[index]) < 1e-8),
+  );
 });
 
 test("motion curves overlap, loop smoothly and respect reduced motion", () => {

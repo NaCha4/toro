@@ -33,9 +33,17 @@ canvas {
   height: 100%;
   cursor: default;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 #viewer[data-greeting-state="waiting"] canvas {
   cursor: pointer;
+}
+#viewer[data-greeting-state="closeup"] canvas {
+  cursor: grab;
+}
+#viewer[data-petting-state="rubbing"] canvas {
+  cursor: grabbing;
 }
 button {
   font: inherit;
@@ -114,7 +122,8 @@ html:not([data-viewer-state="ready"]) #loading {
   visibility: hidden;
   pointer-events: none;
 }
-html:not([data-viewer-state="ready"]) #tap-hint {
+html:not([data-viewer-state="ready"]) #tap-hint,
+html:not([data-viewer-state="ready"]) #pet-hint {
   visibility: hidden;
   pointer-events: none;
 }
@@ -138,6 +147,47 @@ html:not([data-viewer-state="ready"]) #tap-hint {
 }
 #tap-hint[hidden] {
   display: none;
+}
+#pet-hint {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: max(18%, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 32px);
+  padding: 9px 17px 9px 16px;
+  border: 1px solid #ddd8be;
+  border-radius: 30px;
+  background: #fffdf1eb;
+  box-shadow: 0 5px 22px #3c36252b;
+  color: #4d543f;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+#pet-hint[hidden] {
+  display: none;
+}
+.pet-hand {
+  display: inline-block;
+  width: 30px;
+  font-size: 28px;
+  text-align: center;
+  transform-origin: center bottom;
+  animation: pet-guide 1.5s ease-in-out infinite;
+}
+@keyframes pet-guide {
+  0%,
+  100% {
+    transform: translateX(-9px) rotate(-10deg);
+  }
+  50% {
+    transform: translateX(9px) rotate(10deg);
+  }
 }
 .tap-symbol {
   position: relative;
@@ -186,7 +236,8 @@ html:not([data-viewer-state="ready"]) #tap-hint {
 }
 @media (prefers-reduced-motion: reduce) {
   #tap-hint,
-  .tap-symbol::before {
+  .tap-symbol::before,
+  .pet-hand {
     animation: none;
   }
   #tap-hint {
