@@ -82,6 +82,9 @@ canvas:focus-visible {
   );
   backdrop-filter: blur(14px);
 }
+.controls[hidden] {
+  display: none;
+}
 .fullscreen-button {
   position: absolute;
   z-index: 4;
@@ -181,13 +184,22 @@ html[data-viewer-state="blocked"] .fullscreen-button {
 }
 .expression-grid button {
   display: grid;
+  grid-template-rows: 34px 16px;
+  gap: 2px;
   place-items: center;
   width: 44px;
-  height: 42px;
+  height: 61px;
   padding: 3px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
+}
+.expression-number {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: #536047;
 }
 .expression-grid button:hover {
   background: #f0f2e8;
@@ -243,7 +255,8 @@ html[data-viewer-state="blocked"] .fullscreen-button {
   }
   .expression-grid button {
     width: 34px;
-    height: 33px;
+    height: 47px;
+    grid-template-rows: 28px 13px;
     padding: 2px;
   }
   .expression-preview {
@@ -275,7 +288,8 @@ html[data-viewer-state="blocked"] .fullscreen-button {
   }
   .expression-grid button {
     width: 30px;
-    height: 31px;
+    height: 45px;
+    grid-template-rows: 26px 13px;
   }
   .expression-preview {
     width: 26px;
@@ -302,7 +316,8 @@ html[data-viewer-state="blocked"] .fullscreen-button {
   }
   .expression-grid button {
     width: 33px;
-    height: 29px;
+    height: 44px;
+    grid-template-rows: 27px 12px;
     padding: 1px;
   }
   .expression-preview {

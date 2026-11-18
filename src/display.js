@@ -35,6 +35,8 @@ export function setupDisplayMode() {
       /Android|Mobile/i.test(navigator.userAgent) ||
       touchMobile.matches;
     const blocked = Boolean(mobile && !landscapeFullscreen);
+    document.documentElement.dataset.device = mobile ? "mobile" : "desktop";
+    controls.hidden = Boolean(mobile);
     button.hidden = landscapeFullscreen;
     button.disabled = pending;
     document.documentElement.dataset.viewerState = blocked
@@ -44,10 +46,10 @@ export function setupDisplayMode() {
     gate.textContent = fullscreen
       ? "기기를 가로로 돌려 주세요."
       : "가로 전체화면으로 열어 주세요.";
-    for (const element of [viewport, controls]) {
-      element.inert = blocked;
-      element.setAttribute("aria-hidden", String(blocked));
-    }
+    viewport.inert = blocked;
+    viewport.setAttribute("aria-hidden", String(blocked));
+    controls.inert = blocked || Boolean(mobile);
+    controls.setAttribute("aria-hidden", String(controls.inert));
     if (
       blocked &&
       (viewport.contains(document.activeElement) ||

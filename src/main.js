@@ -104,8 +104,9 @@ async function startViewer() {
     const height = viewport.clientHeight;
     camera.aspect = width / height;
     const panelBounds = controlsPanel.getBoundingClientRect();
-    const panelHeight =
-      height - panelBounds.top + viewport.getBoundingClientRect().top;
+    const panelHeight = controlsPanel.hidden
+      ? 0
+      : height - panelBounds.top + viewport.getBoundingClientRect().top;
     const shortLandscape = width > height && height <= 500;
     const availableHeight = Math.max(160, height - panelHeight - 12);
     const halfHeight = Math.max(
@@ -134,14 +135,22 @@ async function startViewer() {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.expression = expression.id;
-    button.setAttribute("aria-label", expression.label);
-    button.title = expression.label;
+    button.dataset.expressionNumber = String(expression.number);
+    button.setAttribute(
+      "aria-label",
+      `${expression.number}번 ${expression.label}`,
+    );
+    button.title = `${expression.number}번 ${expression.label}`;
     const preview = document.createElement("span");
     preview.className = "expression-preview";
     preview.style.backgroundImage = `url("${new URL("toro-expressions.png", document.baseURI).href}")`;
     preview.style.backgroundPosition = `${((expression.tile % 4) * 100) / 3}% ${(Math.floor(expression.tile / 4) * 100) / 3}%`;
     preview.setAttribute("aria-hidden", "true");
-    button.append(preview);
+    const number = document.createElement("span");
+    number.className = "expression-number";
+    number.textContent = String(expression.number);
+    number.setAttribute("aria-hidden", "true");
+    button.append(preview, number);
     button.addEventListener("click", () => {
       state.expression = expression.id;
       toro.setExpression(state.expression);
