@@ -926,15 +926,15 @@ export function createRoom() {
   box(
     root,
     "Left wall below window",
-    [0.18, 2.55, 15.6],
-    [-6.27, 1.275, 3],
+    [0.18, 2.55, 19.2],
+    [-6.27, 1.275, 4.8],
     wall,
   );
   box(
     root,
     "Left wall above window",
-    [0.18, 1.55, 15.6],
-    [-6.27, 6.525, 3],
+    [0.18, 1.55, 19.2],
+    [-6.27, 6.525, 4.8],
     wall,
   );
   box(
@@ -947,22 +947,22 @@ export function createRoom() {
   box(
     root,
     "Left wall in front of window",
-    [0.18, 3.2, 9.1],
-    [-6.27, 4.15, 6.25],
+    [0.18, 3.2, 12.7],
+    [-6.27, 4.15, 8.05],
     wall,
   );
-  box(root, "Right plaster wall", [0.18, 7.25, 15.6], [6.27, 3.57, 3], wall);
+  box(root, "Right plaster wall", [0.18, 7.25, 19.2], [6.27, 3.57, 4.8], wall);
   const ceiling = box(
     root,
     "Ceiling",
-    [12.7, 0.15, 15.6],
-    [0, 7.3, 3],
+    [12.7, 0.15, 19.2],
+    [0, 7.3, 4.8],
     surface(0xe2d9bf),
   );
   ceiling.castShadow = true;
   for (const x of [-6.1, 6.1]) {
     for (const y of [0.18, 3.05, 7.15])
-      box(root, "Side wall beam", [0.2, 0.13, 15.4], [x, y, 3], wood);
+      box(root, "Side wall beam", [0.2, 0.13, 19], [x, y, 4.8], wood);
   }
   for (const x of [-6.12, 0, 6.12])
     box(root, "Back wall post", [0.17, 7.3, 0.22], [x, 3.6, -4.56], wood);
@@ -1016,7 +1016,7 @@ export function createRoom() {
   const extraFloor = surface(0xf5efdb, woven);
   extraFloor.bumpMap = woven;
   extraFloor.bumpScale = 0.018;
-  for (let row = 0; row < 2; row += 1) {
+  for (let row = 0; row < 3; row += 1) {
     for (let col = 0; col < 4; col += 1) {
       const x = -4.5 + col * 3;
       const z = 6 + row * 3;

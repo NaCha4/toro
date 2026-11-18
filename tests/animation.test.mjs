@@ -7,6 +7,8 @@ import { loadImage } from "@napi-rs/canvas";
 import { addWrist } from "../src/wrist.js";
 import { loadToro } from "../src/toro.js";
 import { createGreetingSequence } from "../src/greeting.js";
+import { START_TORO_Z, CLOSEUP_TORO_Z } from "../src/greeting.js";
+import { updateCameraFraming } from "../src/camera-framing.js";
 import {
   createGreetingMotion,
   GREETING_DURATION,
@@ -120,6 +122,20 @@ test("the greeting keeps feet grounded and restores the neutral pose", async () 
     });
   }
   assert.ok(moved.every(Boolean));
+  for (let frame = 0; frame <= 240; frame++) {
+    const progress = frame / 240;
+    toro.animate(13 + frame / 60, "walk", true, 1, progress);
+    toro.root.position.z = THREE.MathUtils.lerp(
+      START_TORO_Z,
+      CLOSEUP_TORO_Z,
+      progress,
+    );
+    toro.root.updateMatrixWorld(true);
+    const floor = Math.min(
+      ...feet.flatMap((mesh) => worldVertices(mesh).map((point) => point.y)),
+    );
+    assert.ok(Math.abs(floor) < 0.005);
+  }
   toro.animate(15, "stand");
   joints.forEach((joint, index) => {
     joint.quaternion
@@ -145,9 +161,9 @@ test("motion curves overlap, loop smoothly and respect reduced motion", () => {
   assert.ok(Object.values(sample(2, true, 0)).every((value) => value === 0));
 });
 
-test("the intro waits three seconds and accepts a single greeting", () => {
-  let completed = 0;
-  const sequence = createGreetingSequence(() => completed++);
+test("the intro greets once, pauses for one second and approaches the camera", () => {
+  const phases = [];
+  const sequence = createGreetingSequence((phase) => phases.push(phase));
   assert.equal(sequence.heading, Math.PI);
   sequence.update(2.99);
   assert.equal(sequence.hintVisible, false);
@@ -160,11 +176,67 @@ test("the intro waits three seconds and accepts a single greeting", () => {
   assert.ok(Math.abs(sequence.heading - Math.PI / 2) < 1e-10);
   sequence.update(0.6);
   assert.equal(sequence.heading, 0);
-  sequence.update(10);
-  assert.equal(completed, 1);
-  const reduced = createGreetingSequence(() => completed++);
+  assert.equal(sequence.phase, "greeting");
+  sequence.update(GREETING_DURATION);
+  assert.equal(sequence.phase, "pause");
+  assert.equal(sequence.approachProgress, 0);
+  sequence.update(0.99);
+  assert.equal(sequence.phase, "pause");
+  sequence.update(0.01);
+  assert.equal(sequence.phase, "approaching");
+  sequence.update(2.1);
+  assert.ok(Math.abs(sequence.approachProgress - 0.5) < 1e-8);
+  sequence.update(2.1);
+  assert.equal(sequence.phase, "closeup");
+  assert.equal(sequence.approachProgress, 1);
+  sequence.update(100);
+  assert.deepEqual(phases, [
+    "turning",
+    "greeting",
+    "pause",
+    "approaching",
+    "closeup",
+  ]);
+  const reduced = createGreetingSequence();
   reduced.start(true);
   assert.equal(reduced.phase, "greeting");
-  assert.equal(reduced.waveBlend, 1);
-  assert.equal(completed, 2);
+  reduced.update(GREETING_DURATION, true);
+  assert.equal(reduced.phase, "pause");
+  reduced.update(1, true);
+  assert.equal(reduced.phase, "closeup");
+});
+
+test("a delayed frame completes each sequence phase in order", () => {
+  const phases = [];
+  const sequence = createGreetingSequence((phase) => phases.push(phase));
+  sequence.update(100);
+  sequence.start();
+  assert.equal(sequence.heading, Math.PI);
+  sequence.update(30);
+  assert.deepEqual(phases, [
+    "turning",
+    "greeting",
+    "pause",
+    "approaching",
+    "closeup",
+  ]);
+});
+
+test("closeup framing keeps the camera frontal and widens the lens", () => {
+  for (const [width, height, panelHeight] of [
+    [812, 375, 0],
+    [1440, 760, 180],
+    [447, 447, 0],
+  ]) {
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    updateCameraFraming(camera, width, height, panelHeight, 0);
+    const initialFov = camera.fov;
+    updateCameraFraming(camera, width, height, panelHeight, 1);
+    assert.deepEqual(camera.position.toArray(), [0, 3.8, 12]);
+    assert.equal(camera.rotation.y, 0);
+    assert.equal(camera.rotation.z, 0);
+    assert.ok(camera.fov > initialFov);
+    assert.ok(camera.fov < 95);
+    assert.ok(camera.projectionMatrix.elements.every(Number.isFinite));
+  }
 });

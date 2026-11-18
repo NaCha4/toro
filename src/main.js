@@ -3,7 +3,12 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { loadToro, expressions } from "./toro.js";
 import { createRoom } from "./room.js";
 import { setupDisplayMode } from "./display.js";
-import { createGreetingSequence } from "./greeting.js";
+import {
+  createGreetingSequence,
+  START_TORO_Z,
+  CLOSEUP_TORO_Z,
+} from "./greeting.js";
+import { updateCameraFraming } from "./camera-framing.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
@@ -88,23 +93,16 @@ async function startViewer() {
   composer.addPass(ambientOcclusion);
   composer.addPass(new OutputPass());
 
+  let closeupProgress = 0;
+  let panelHeight = 0;
   function resize() {
     const width = viewport.clientWidth;
     const height = viewport.clientHeight;
-    camera.aspect = width / height;
     const panelBounds = controlsPanel.getBoundingClientRect();
-    const panelHeight = controlsPanel.hidden
+    panelHeight = controlsPanel.hidden
       ? 0
       : height - panelBounds.top + viewport.getBoundingClientRect().top;
-    const shortLandscape = width > height && height <= 500;
-    const availableHeight = Math.max(160, height - panelHeight - 12);
-    const halfHeight = Math.max(
-      ((shortLandscape ? 3.1 : 3.7) * height) / availableHeight,
-      3.6 / camera.aspect,
-    );
-    camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(halfHeight / 13.1));
-    camera.setViewOffset(width, height, 0, panelHeight / 2, width, height);
-    camera.updateProjectionMatrix();
+    updateCameraFraming(camera, width, height, panelHeight, closeupProgress);
     renderer.setSize(width, height);
     composer.setSize(width, height);
   }
@@ -115,7 +113,7 @@ async function startViewer() {
 
   const toro = await loadToro();
   toro.root.scale.multiplyScalar(0.91);
-  toro.root.position.z = 0.9;
+  toro.root.position.z = START_TORO_Z;
   scene.add(toro.root);
   const room = createRoom();
   scene.add(room.root);
@@ -162,14 +160,32 @@ async function startViewer() {
   const previewButtons = document.querySelectorAll(
     "[data-pose], [data-expression]",
   );
-  const greeting = createGreetingSequence(() => {
-    state.pose = "wave";
+  const phasePoses = {
+    turning: "stand",
+    greeting: "wave",
+    pause: "stand",
+    approaching: "walk",
+    closeup: "stand",
+  };
+  const phaseLabels = {
+    turning: "토로가 돌아서고 있어요",
+    greeting: "2번 표정으로 인사하는 토로",
+    pause: "1번 표정으로 잠시 기다리는 토로",
+    approaching: "카메라 앞으로 걸어오는 토로",
+    closeup: "카메라 가까이에서 바라보는 토로 얼굴",
+  };
+  const greeting = createGreetingSequence((phase) => {
+    state.pose = phasePoses[phase];
+    state.expression =
+      phase === "turning" || phase === "greeting" ? "smile" : "normal";
+    toro.setExpression(state.expression);
+    selectButton("expression", state.expression);
     selectButton("pose", state.pose);
     previewButtons.forEach((button) => {
-      button.disabled = false;
+      button.disabled = phase !== "closeup";
     });
     renderer.domElement.setAttribute("role", "img");
-    renderer.domElement.setAttribute("aria-label", "다다미 방 안의 토로");
+    renderer.domElement.setAttribute("aria-label", phaseLabels[phase]);
   });
   viewer.dataset.greetingState = greeting.phase;
   renderer.domElement.setAttribute("role", "button");
@@ -182,14 +198,7 @@ async function startViewer() {
       greeting.phase !== "waiting"
     )
       return;
-    renderer.domElement.setAttribute(
-      "aria-label",
-      "토로가 돌아서 인사하고 있어요",
-    );
     greeting.start(reducedMotion.matches);
-    state.expression = "smile";
-    toro.setExpression(2);
-    selectButton("expression", state.expression);
     hint.hidden = true;
     viewer.dataset.greetingState = greeting.phase;
   }
@@ -223,15 +232,31 @@ async function startViewer() {
     const delta = timer.getDelta();
     activeTime += delta;
     greeting.update(delta, reducedMotion.matches);
+    closeupProgress = greeting.approachProgress;
     viewer.dataset.greetingState = greeting.phase;
     hint.hidden = !greeting.hintVisible;
     toro.animate(
       activeTime,
       state.pose,
       !reducedMotion.matches,
-      greeting.waveBlend,
+      greeting.phase === "greeting" && !reducedMotion.matches
+        ? greeting.waveBlend
+        : 1,
+      closeupProgress,
+    );
+    toro.root.position.z = THREE.MathUtils.lerp(
+      START_TORO_Z,
+      CLOSEUP_TORO_Z,
+      closeupProgress,
     );
     toro.root.rotation.y += greeting.heading;
+    updateCameraFraming(
+      camera,
+      viewport.clientWidth,
+      viewport.clientHeight,
+      panelHeight,
+      closeupProgress,
+    );
     room.animate(activeTime, !reducedMotion.matches);
     composer.render();
   });

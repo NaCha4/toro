@@ -147,13 +147,25 @@ export async function loadToro() {
   let previousPose;
   let poseStartedAt = 0;
   const sampleGreeting = createGreetingMotion();
-  function animate(time, pose, motion = true, poseBlend = 1) {
+  function animate(
+    time,
+    pose,
+    motion = true,
+    poseBlend = 1,
+    approachProgress = 0,
+  ) {
     if (pose !== previousPose) {
       previousPose = pose;
       poseStartedAt = time;
     }
     const sway = motion ? Math.sin(time * 1.8) : 0;
     const greeting = sampleGreeting(time - poseStartedAt, motion, poseBlend);
+    const stepPhase = approachProgress * Math.PI * 16;
+    const walkBlend = motion
+      ? THREE.MathUtils.smoothstep(approachProgress, 0, 0.06) *
+        (1 - THREE.MathUtils.smoothstep(approachProgress, 0.91, 1))
+      : 0;
+    const stride = Math.sin(stepPhase) * walkBlend;
     root.rotation.y = pose === "dance" ? sway * 0.1 : 0;
     root.position.x = 0;
     root.position.y = pose === "dance" ? Math.abs(sway) * 0.04 : 0;
@@ -208,6 +220,39 @@ export async function loadToro() {
       rotateJoint(body.rightThigh, -rightKnee * 0.5, 0, greeting.weight * 0.01);
       rotateJoint(body.rightCalf, rightKnee, 0, 0);
     }
+    if (pose === "walk") {
+      root.position.x = stride * 0.018;
+      root.rotation.y = stride * 0.025;
+      rotateJoint(
+        body.pelvis,
+        walkBlend * 0.02,
+        stride * 0.025,
+        stride * 0.018,
+      );
+      rotateJoint(
+        body.spine,
+        walkBlend * 0.045,
+        -stride * 0.02,
+        -stride * 0.012,
+      );
+      rotateJoint(body.head, -walkBlend * 0.025, 0, stride * 0.01);
+      rotateJoint(body.leftThigh, -stride * 0.44, 0, 0);
+      rotateJoint(body.rightThigh, stride * 0.44, 0, 0);
+      rotateJoint(
+        body.leftCalf,
+        walkBlend * 0.04 + Math.max(0, stride) * 0.5,
+        0,
+        0,
+      );
+      rotateJoint(
+        body.rightCalf,
+        walkBlend * 0.04 + Math.max(0, -stride) * 0.5,
+        0,
+        0,
+      );
+    }
+    const closeupLean = THREE.MathUtils.smoothstep(approachProgress, 0.75, 1);
+    rotateJoint(body.head, closeupLean * 0.07, 0, 0);
 
     for (const arm of armBones) {
       const restingAngle = arm.part === "UpperArm" ? -arm.side * 1.35 : 0;
@@ -242,8 +287,15 @@ export async function loadToro() {
           0,
         );
       }
+      if (pose === "walk") {
+        const swing =
+          arm.part === "UpperArm"
+            ? stride * 0.24
+            : Math.sin(stepPhase - 0.3) * walkBlend * 0.1;
+        rotateJoint(arm, swing * arm.side, 0, 0);
+      }
     }
-    if (pose === "wave") groundFeet();
+    if (pose === "wave" || pose === "walk") groundFeet();
   }
 
   return { root, setExpression, animate };
