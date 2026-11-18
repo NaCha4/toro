@@ -2,8 +2,6 @@ import * as THREE from "three";
 
 const HINT_DELAY = 3;
 const DRAG_THRESHOLD = 5;
-const REWARD_RUB_DURATION = 3;
-const MOTION_GRACE_PERIOD = 0.2;
 
 function settle(axis, target, delta) {
   const frequency = 18;
@@ -39,8 +37,6 @@ export function createPettingMotion() {
   let idleTime = 0;
   let contact = null;
   let rubbing = false;
-  let rubDuration = 0;
-  let movementAge = Infinity;
 
   function cancel() {
     contact = null;
@@ -49,8 +45,6 @@ export function createPettingMotion() {
     target.x = 0;
     target.y = 0;
     target.pressure = 0;
-    rubDuration = 0;
-    movementAge = Infinity;
   }
 
   return {
@@ -62,9 +56,6 @@ export function createPettingMotion() {
     },
     get rubbing() {
       return rubbing;
-    },
-    get rubDuration() {
-      return rubDuration;
     },
     get hintVisible() {
       return enabled && !contact && idleTime >= HINT_DELAY;
@@ -119,27 +110,19 @@ export function createPettingMotion() {
         1,
       );
       target.pressure = 1;
-      if (Math.hypot(dx, dy) > 0.25) movementAge = 0;
       contact.x = x;
       contact.y = y;
       return started;
     },
     end(id) {
       if (contact?.id !== id) return false;
-      const completed = rubDuration >= REWARD_RUB_DURATION - 1e-6;
+      const completed = rubbing;
       cancel();
       return completed;
     },
     cancel,
     update(delta) {
       const elapsed = Math.max(0, delta);
-      if (rubbing) {
-        rubDuration += Math.min(
-          elapsed,
-          Math.max(0, MOTION_GRACE_PERIOD - movementAge),
-        );
-        movementAge += elapsed;
-      }
       if (enabled && !contact) idleTime += elapsed;
       for (const name of Object.keys(axes))
         settle(axes[name], target[name], elapsed);

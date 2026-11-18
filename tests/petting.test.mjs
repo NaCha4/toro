@@ -97,41 +97,29 @@ test("the head follows a reversal at the limit and settles with a small rebound"
   assert.ok(Math.abs(motion.pose.x) < 0.0001);
 });
 
-test("three seconds of movement qualifies only on release", () => {
+test("one short stroke completes on release without waiting for a frame", () => {
   const motion = createPettingMotion();
   motion.setEnabled(true);
   motion.begin(1, 100, 100, 400, 400);
-  for (let frame = 0; frame < 190; frame++) {
-    motion.move(1, 100 + Math.sin(frame * 0.2) * 60, 100);
-    motion.update(1 / 60);
-  }
-  assert.ok(motion.rubDuration >= 3);
+  motion.move(1, 105, 100);
   assert.equal(motion.rubbing, true);
   assert.equal(motion.end(1), true);
   assert.equal(motion.end(1), false);
 });
 
-test("a short stroke, stationary hold or canceled stroke does not qualify", () => {
+test("taps, stationary holds, jitter and canceled strokes do not qualify", () => {
   const motion = createPettingMotion();
   motion.setEnabled(true);
   motion.begin(1, 100, 100, 400, 400);
-  motion.move(1, 140, 100);
-  motion.update(4);
-  assert.ok(motion.rubDuration <= 0.2);
   assert.equal(motion.end(1), false);
-  for (let attempt = 0; attempt < 2; attempt++) {
-    motion.begin(1, 100, 100, 400, 400);
-    for (let frame = 0; frame < 110; frame++) {
-      motion.move(1, 100 + Math.sin(frame * 0.2) * 60, 100);
-      motion.update(1 / 60);
-    }
-    assert.equal(motion.end(1), false);
-  }
   motion.begin(1, 100, 100, 400, 400);
-  for (let frame = 0; frame < 190; frame++) {
-    motion.move(1, 100 + Math.sin(frame * 0.2) * 60, 100);
-    motion.update(1 / 60);
-  }
+  motion.update(4);
+  assert.equal(motion.end(1), false);
+  motion.begin(1, 100, 100, 400, 400);
+  motion.move(1, 102, 102);
+  assert.equal(motion.end(1), false);
+  motion.begin(1, 100, 100, 400, 400);
+  motion.move(1, 140, 100);
   motion.cancel();
   assert.equal(motion.end(1), false);
 });
@@ -197,12 +185,10 @@ test("a completed pointer stroke locks interaction once and cancellation never t
   };
   const rub = () => {
     dispatch(canvas, "pointerdown");
-    for (let frame = 0; frame < 190; frame++) {
-      dispatch(windowEvents, "pointermove", 225 + Math.sin(frame * 0.2) * 20);
-      motion.update(1 / 60);
-    }
+    dispatch(windowEvents, "pointermove", 225);
   };
   rub();
+  assert.equal(rewards, 0);
   dispatch(windowEvents, "pointerup");
   dispatch(canvas, "lostpointercapture");
   assert.equal(rewards, 1);

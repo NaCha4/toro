@@ -17,7 +17,8 @@
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>토로의 방</title>
-  <link rel="stylesheet" href="./assets/app-YSWMMT6T.css" />
+    <style>@font-face{font-family:ToroLCD;src:url("./Galmuri11.woff2") format("woff2");font-display:swap}</style>
+  <link rel="stylesheet" href="./assets/app-RY6MNDLA.css" />
 </head>
   <body>
     <main id="viewer" aria-label="토로 3D 뷰어">
@@ -34,8 +35,67 @@
       </button>
       <div id="pet-hint" role="status" hidden>
         <span class="pet-hand" aria-hidden="true">☝</span>
-        <span>머리를 좌우로 문질러 주세요</span>
+        <span>머리를 한 번 쓰다듬어 주세요</span>
       </div>
+      <div id="cheer-menu" role="group" aria-label="토로와 할 일 선택" hidden>
+        <svg class="cheer-menu-panel" viewBox="0 0 660 880" aria-hidden="true">
+          <path id="menu-outline" d="M4 4H363Q384 38 395 80H508V679
+            C551 694 575 733 562 776C548 835 470 861 412 810
+            C334 896 186 898 111 815L82 790H4Z" />
+          <clipPath id="menu-clip"><use href="#menu-outline" /></clipPath>
+          <g clip-path="url(#menu-clip)">
+            <path d="M0 68C155 89 284 229 296 394S168 692 0 722
+              M512 184C396 183 294 281 296 404S390 608 512 613
+              M112 653Q221 737 228 878" />
+          </g>
+        </svg>
+        <button type="button" id="teach-word" class="current" lang="ja">ことばをおしえる</button>
+        <button type="button" id="cheer-dance" lang="ja">おどる</button>
+        <button type="button" id="sake-delivery" lang="ja">おくりもの</button>
+      </div>
+      <section id="word-room" aria-label="토로와 대화" hidden>
+        <button type="button" class="toro-bubble" aria-label="토로 대사 계속" hidden>
+          <span class="bubble-line" aria-hidden="true"></span><span class="bubble-next" aria-hidden="true">▶</span>
+        </button>
+        <div class="answer-box" role="group" aria-label="대답 선택" hidden>
+          <div class="answer-question" aria-hidden="true"></div>
+          <button type="button" class="answer-up" aria-label="이전 선택지 페이지">▲</button>
+          <div class="answer-list"></div>
+          <span class="answer-page" aria-live="polite"></span>
+          <button type="button" class="answer-down" aria-label="다음 선택지 페이지">▼</button>
+        </div>
+        <div class="pocket" role="group" aria-label="포켓스테이션 영문 입력기" hidden>
+          <svg class="pocket-shell" viewBox="0 0 240 310" aria-hidden="true">
+            <g stroke="#362a16" stroke-width="5" fill="#ff9c00">
+              <path d="M187 194Q242 245 342 274L345 329Q271 337 242 308Q214 314 190 297Z"/>
+              <ellipse cx="164" cy="236" rx="127" ry="133" fill="none" stroke-width="45"/>
+              <ellipse cx="164" cy="236" rx="127" ry="133" fill="none" stroke="#ff9c00" stroke-width="36"/>
+            </g>
+            <path fill="#d9e9eb" stroke="#bbc9ca" stroke-width="2" d="M3 123Q3 19 91 5Q119 1 149 5Q237 20 237 120L237 282Q237 300 212 303Q122 317 28 304Q3 301 3 283Z"/>
+            <path fill="#848686" d="M92 5Q120 0 150 5Q146 16 121 16Q100 16 92 5Z"/>
+            <path fill="#a6abbc" d="M33 147V98Q33 39 61 37Q120 28 183 37Q209 39 209 98V150Q209 171 186 171H55Q33 171 33 147Z"/>
+            <path fill="none" stroke="#99a3ad" stroke-width="5" d="M3 169L14 169Q18 185 31 185H212Q220 184 225 170H237M16 221Q11 294 101 306Q119 310 140 306Q221 296 224 228"/>
+            <text x="122" y="295" text-anchor="middle" fill="#66717b" font-family="Georgia, serif" font-size="16" font-weight="bold" letter-spacing="1">SONY</text>
+          </svg>
+          <div class="pocket-lcd">
+            <label class="pocket-label" for="pocket-word">토로에게 가르칠 단어</label>
+            <input id="pocket-word" aria-label="가르칠 영단어" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" lang="en" dir="ltr" pattern="[A-Za-z]*" maxlength="16" enterkeyhint="done" />
+            <div class="pocket-grid" role="group" aria-label="액정 글자 선택"></div>
+          </div>
+          <button class="pocket-edit" type="button" aria-label="편집 메뉴 열기" title="편집 메뉴">···</button>
+          <button class="pocket-pad pad-up" type="button" aria-label="위로" data-pad="up"></button>
+          <button class="pocket-pad pad-left" type="button" aria-label="왼쪽으로" data-pad="left"></button>
+          <button class="pocket-pad pad-right" type="button" aria-label="오른쪽으로" data-pad="right"></button>
+          <button class="pocket-pad pad-down" type="button" aria-label="아래로" data-pad="down"></button>
+          <button class="pocket-pad pad-ok" type="button" aria-label="선택" title="선택" data-pad="ok"></button>
+          <div class="pocket-hint" role="status"></div>
+          <div class="pocket-actions">
+            <button type="button" class="pocket-keyboard">키보드 입력</button>
+            <button type="button" class="pocket-done">입력 완료</button>
+          </div>
+        </div>
+        <div class="word-announcement" role="status" aria-live="polite"></div>
+      </section>
       <p id="display-gate" role="status" hidden>
         가로 전체화면으로 열어 주세요.
       </p>
@@ -88,6 +148,6 @@
         <button type="button" id="display-help-close">확인</button>
       </dialog>
     </main>
-    <script type="module" src="./assets/app-YSHESGYM.js"></script>
+    <script type="module" src="./assets/app-FMWYGIV3.js"></script>
   </body>
 </html>

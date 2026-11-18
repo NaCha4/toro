@@ -24,6 +24,7 @@ const result = await build({
   absWorkingDir: root,
   entryPoints: { app: "src/main.js" },
   bundle: true,
+  loader: { ".woff2": "dataurl" },
   minify: true,
   format: "esm",
   target: "es2022",

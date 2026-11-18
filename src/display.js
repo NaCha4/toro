@@ -7,10 +7,15 @@ export function setupDisplayMode() {
   const gate = document.querySelector("#display-gate");
   const viewport = document.querySelector("#viewport");
   const controls = document.querySelector(".controls");
+  const wordRoom = document.querySelector("#word-room");
   const landscape = matchMedia("(orientation: landscape)");
   const fullscreenDisplay = matchMedia("(display-mode: fullscreen)");
   const standaloneDisplay = matchMedia("(display-mode: standalone)");
   const touchMobile = matchMedia("(hover: none) and (pointer: coarse)");
+  const url = new URL(window.location.href);
+  const windowedPreview =
+    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+    url.searchParams.get("preview") === "1";
   const appleMobile =
     /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -34,10 +39,10 @@ export function setupDisplayMode() {
       navigator.userAgentData?.mobile ||
       /Android|Mobile/i.test(navigator.userAgent) ||
       touchMobile.matches;
-    const blocked = Boolean(mobile && !landscapeFullscreen);
+    const blocked = Boolean(mobile && !landscapeFullscreen && !windowedPreview);
     document.documentElement.dataset.device = mobile ? "mobile" : "desktop";
     controls.hidden = Boolean(mobile);
-    button.hidden = landscapeFullscreen;
+    button.hidden = landscapeFullscreen || (mobile && windowedPreview);
     button.disabled = pending;
     document.documentElement.dataset.viewerState = blocked
       ? "blocked"
@@ -49,11 +54,13 @@ export function setupDisplayMode() {
     viewport.inert = blocked;
     viewport.setAttribute("aria-hidden", String(blocked));
     controls.inert = blocked || Boolean(mobile);
+    wordRoom.inert = blocked;
     controls.setAttribute("aria-hidden", String(controls.inert));
     if (
       blocked &&
       (viewport.contains(document.activeElement) ||
-        controls.contains(document.activeElement))
+        controls.contains(document.activeElement) ||
+        wordRoom.contains(document.activeElement))
     ) {
       button.focus({ preventScroll: true });
     }

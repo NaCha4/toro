@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { createGreetingMotion } from "./greeting-motion.js";
+import { CHEER_DANCE_DURATION, sampleCheerDance } from "./cheer-dance.js";
 import { addWrist } from "./wrist.js";
 import { createArmIK } from "./arm-ik.js";
 
@@ -92,6 +93,10 @@ export async function loadToro() {
     rightCalf: captureJoint("R_Calf"),
   };
   const bodyJoints = Object.values(body);
+  const mouth = new THREE.Object3D();
+  // Anchor the rim to the mouth on the supplied face atlas as the head tilts.
+  mouth.position.copy(body.head.bone.worldToLocal(new THREE.Vector3(0, 2.55, 0.78)));
+  body.head.bone.add(mouth);
   const hands = { L: createArmIK(root, "L"), R: createArmIK(root, "R") };
   const footPoint = new THREE.Vector3();
   const feet = ["toro_lleg", "toro_rleg"].map((name) => {
@@ -156,12 +161,12 @@ export async function loadToro() {
     poseBlend = 1,
     approachProgress = 0,
     locomotion = null,
+    danceProgress = null,
   ) {
     if (pose !== previousPose) {
       previousPose = pose;
       poseStartedAt = time;
     }
-    const sway = motion ? Math.sin(time * 1.8) : 0;
     const greeting = sampleGreeting(time - poseStartedAt, motion, poseBlend);
     const stepPhase = locomotion?.phase ?? approachProgress * Math.PI * 16;
     const walkBlend = motion
@@ -170,9 +175,9 @@ export async function loadToro() {
           (1 - THREE.MathUtils.smoothstep(approachProgress, 0.91, 1)))
       : 0;
     const stride = Math.sin(stepPhase) * walkBlend;
-    root.rotation.y = pose === "dance" ? sway * 0.1 : 0;
+    root.rotation.y = 0;
     root.position.x = 0;
-    root.position.y = pose === "dance" ? Math.abs(sway) * 0.04 : 0;
+    root.position.y = 0;
     for (const joint of bodyJoints) joint.bone.quaternion.copy(joint.rest);
 
     if (pose === "wave") {
@@ -274,12 +279,6 @@ export async function loadToro() {
           greeting.chest * (arm.part === "UpperArm" ? -0.11 : -0.2) -
           greeting.elbowSwing * 0.02;
       }
-      if (pose === "dance") {
-        angle =
-          arm.part === "UpperArm"
-            ? arm.side * (0.25 + sway * 0.3)
-            : arm.side * 0.65;
-      }
       arm.bone.quaternion
         .copy(arm.rest)
         .premultiply(delta.setFromAxisAngle(arm.rollAxis, angle));
@@ -300,6 +299,12 @@ export async function loadToro() {
       }
     }
     if (pose === "wave" || pose === "walk") groundFeet();
+    if (pose === "dance") {
+      const previewProgress = ((time - poseStartedAt) % CHEER_DANCE_DURATION) / CHEER_DANCE_DURATION;
+      const dance = sampleCheerDance(motion ? (danceProgress ?? previewProgress) : 0.34);
+      applyCheerDance(dance);
+      return dance.expression;
+    }
   }
 
   function applyPetting(pose, amount = 1) {
@@ -310,9 +315,100 @@ export async function loadToro() {
     rotateJoint(body.head, y * 0.17 + pressure * 0.04, x * 0.23, -x * 0.21);
   }
 
+  function applyCheerDance(dance) {
+    const { weight, stance, finish, turnIn, step } = dance;
+    const hipRoll = 0.09 * weight;
+    const chestRoll = 0.15 * weight * (1 - finish);
+    root.position.x = weight * 0.20 - finish * 0.055 - step * 0.045;
+    root.rotation.y = -1.5 * turnIn;
+    rotateJoint(body.pelvis, 0, 0.59 * finish, hipRoll);
+    rotateJoint(body.spine, -0.025 * stance, 0.08 * finish, chestRoll - hipRoll);
+    // The chest counterbalances the tapping foot. The face tips the other way
+    // and stays towards the viewer as the ribs turn for the cheek pose.
+    rotateJoint(body.neck, 0, -0.28 * finish, -0.08 * weight);
+    rotateJoint(body.head, -0.04 * finish, -0.35 * finish,
+      -chestRoll - 0.055 * weight - 0.43 * finish);
+    for (const arm of armBones) {
+      const left = arm.side > 0;
+      const upper = left ? dance.leftUpper : dance.rightUpper;
+      const fore = left ? dance.leftFore : dance.rightFore;
+      const isUpper = arm.part === "UpperArm";
+      const roll = isUpper ? arm.side * (upper + 1.35) - chestRoll : arm.side * (fore - upper);
+      rotateJoint(arm, isUpper ? arm.side * step * 0.24 : 0, 0, roll);
+      if (isUpper) {
+        const forward = left ? dance.leftForward : dance.rightForward;
+        rotateJoint(arm, left ? 0 : 0.25 * finish, -arm.side * forward * 1.02, 0);
+      }
+    }
+    const leftLeg = (0.23 * stance - 0.23 * weight) * (1 - finish);
+    const rightLeg = (-0.25 * stance - 0.25 * weight) * (1 - finish);
+    rotateJoint(body.leftThigh, -1.30 * finish - 0.61 * step, 0, leftLeg - hipRoll);
+    rotateJoint(body.rightThigh, 0.61 * step, 0, rightLeg - hipRoll);
+    rotateJoint(body.leftCalf, 1.32 * finish + 0.36 * step, 0, 0);
+    groundFeet();
+  }
+
   function applyActing(lean = 0, headPitch = 0) {
     rotateJoint(body.spine, lean, 0, 0);
     rotateJoint(body.head, headPitch, 0, 0);
+  }
+
+  const gestures = {
+    // Head pitch, tilt, upper arm lift, forearm bend and bow.
+    listen: [0, 0.015, 0.06, 0.09, 0],
+    curious: [-0.055, 0.15, 0.34, 0.33, 0.055],
+    proud: [-0.09, -0.055, 0.57, 0.31, -0.05],
+    happy: [-0.11, 0.04, 0.93, 0.42, -0.035],
+    shy: [0.12, -0.13, 0.10, 0.78, 0.08],
+    paws: [0.08, -0.08, 0.14, 0.48, 0.045],
+    droop: [0.24, 0.07, -0.025, 0.045, 0.14],
+    wave: [-0.06, -0.09, 0.30, 0.22, 0],
+  };
+  const restGesture = [0, 0, 0, 0, 0];
+  const gesturePose = [...restGesture];
+  const chest = new THREE.Vector3();
+  const pawTarget = new THREE.Vector3();
+  const rightDirection = new THREE.Vector3(1, 0, 0);
+  let pawsTogether = 0;
+  let waveAmount = 0;
+  function applyConversation(gesture, time, deltaTime, motion) {
+    const target = gestures[gesture] ?? restGesture;
+    for (let i = 0; i < target.length; i++)
+      gesturePose[i] = motion ? THREE.MathUtils.damp(gesturePose[i], target[i], 8, deltaTime) : target[i];
+    waveAmount = THREE.MathUtils.damp(waveAmount, Number(gesture === "wave"), 8, deltaTime);
+    const clasp = Number(gesture === "paws" || gesture === "shy");
+    pawsTogether = motion ? THREE.MathUtils.damp(pawsTogether, clasp, 7, deltaTime) : clasp;
+    if (!gesture && Math.abs(gesturePose[2]) + Math.abs(gesturePose[4]) + waveAmount + pawsTogether < .001) return;
+    const [pitch, tilt, lift, bend, bow] = gesturePose;
+    const beat = gesture && motion ? Math.sin(time * 3.8) : 0;
+    rotateJoint(body.spine, bow, 0, -tilt * 0.14);
+    rotateJoint(body.head, pitch + beat * 0.021, tilt * 0.36, tilt);
+    for (const arm of armBones) {
+      const upper = arm.part === "UpperArm";
+      const wave = arm.side > 0 ? waveAmount * (upper ? 0.94 : 0.60 + beat * 0.18) : 0;
+      rotateJoint(arm, upper ? -bend * 0.46 : -bend * 0.72, 0,
+        arm.side * ((upper ? lift : bend * 0.47) + wave));
+    }
+    if (pawsTogether > 0.001) {
+      body.leftShoulder.bone.getWorldPosition(chest);
+      body.rightShoulder.bone.getWorldPosition(pawTarget);
+      chest.lerp(pawTarget, .5);
+      chest.y -= .10;
+      chest.z += .27;
+      hands.L.solve(pawTarget.copy(chest).addScaledVector(rightDirection, .075), pawsTogether);
+      hands.R.solve(pawTarget.copy(chest).addScaledVector(rightDirection, -.075), pawsTogether);
+    }
+  }
+
+  function applySakePose(crouch, bow, sip) {
+    for (const side of ["left", "right"]) {
+      rotateJoint(body[side + "Thigh"], -1.50 * crouch, 0, 0);
+      rotateJoint(body[side + "Calf"], 2.50 * crouch, 0, 0);
+    }
+    rotateJoint(body.spine, 0.23 * crouch + 0.28 * bow - 0.10 * sip, 0, 0);
+    rotateJoint(body.neck, 0.16 * bow - 0.08 * sip, 0, 0);
+    rotateJoint(body.head, 0.22 * bow - 0.20 * sip, 0, 0);
+    if (crouch > 0) groundFeet();
   }
 
   return {
@@ -322,6 +418,9 @@ export async function loadToro() {
     animate,
     applyPetting,
     applyActing,
+    applyConversation,
+    applySakePose,
+    mouth,
     hands,
   };
 }

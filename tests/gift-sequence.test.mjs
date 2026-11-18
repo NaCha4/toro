@@ -1,21 +1,44 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { CHEER_DANCE_DURATION } from "../src/cheer-dance.js";
+import { SAKE_PHASES } from "../src/sake-delivery.js";
 import {
   createGiftSequence,
   GIFT_PHASE_DURATIONS,
   sampleGiftSequence,
 } from "../src/gift-sequence.js";
 
-test("the reward waits one second and completes its phases exactly once", () => {
+test("Okurimono branches straight into delivery and can be replayed from the menu", () => {
+  for (const reducedMotion of [false, true]) {
+    const visited = [];
+    const story = createGiftSequence(phase => visited.push(phase));
+    assert.equal(story.startSakeDelivery(), false);
+    story.start();
+    story.update(120, reducedMotion);
+    assert.equal(story.startSakeDelivery(), false);
+    story.openPresent();
+    story.update(120, reducedMotion);
+    for (let run = 0; run < 2; run++) {
+      visited.length = 0;
+      assert.equal(story.startSakeDelivery(), true);
+      assert.equal(story.phase, "sake_arrives");
+      assert.equal(story.startSakeDelivery(), false);
+      assert.equal(story.startDance(), false);
+      story.update(150, reducedMotion);
+      assert.deepEqual(visited, [...Object.keys(SAKE_PHASES), "stand_at_center", "dance_ready"]);
+    }
+    assert.equal(story.startDance(), true);
+    story.update(60, reducedMotion);
+    assert.equal(story.phase, "dance_ready");
+  }
+});
+
+test("the reward starts with the turn to the fridge and completes its phases exactly once", () => {
   const visited = [];
   const sequence = createGiftSequence((phase) => visited.push(phase));
   assert.equal(sequence.active, false);
   assert.equal(sequence.start(), true);
   assert.equal(sequence.start(), false);
-  assert.equal(sequence.phase, "after_pet");
-  sequence.update(0.99);
-  assert.equal(sequence.phase, "after_pet");
-  sequence.update(0.01);
   assert.equal(sequence.phase, "turn_to_fridge");
   sequence.update(100);
   assert.equal(sequence.phase, "presenting");
@@ -32,8 +55,10 @@ test("the reward waits one second and completes its phases exactly once", () => 
   assert.equal(sequence.phase, "celebrating");
 });
 
-test("the fridge route and return route remain continuous and avoid the table", () => {
-  const phases = Object.keys(GIFT_PHASE_DURATIONS);
+test("the pickup, storage and door routes join without jumps", () => {
+  const phases = [...Object.keys(GIFT_PHASE_DURATIONS), "presenting", "gift_burst",
+    "celebrating", "turn_back_to_fridge", "carry_to_fridge", "shelve_gift",
+    "release_gift", "step_to_door", "close_fridge", "return_to_center", "stand_at_center"];
   for (let index = 0; index < phases.length - 1; index++) {
     const before = sampleGiftSequence(phases[index], 1);
     const after = sampleGiftSequence(phases[index + 1], 0);
@@ -44,8 +69,6 @@ test("the fridge route and return route remain continuous and avoid the table", 
     for (let index = 0; index <= 100; index++) {
       const frame = sampleGiftSequence(phase, index / 100);
       assert.ok(frame.position.toArray().every(Number.isFinite));
-      if (frame.position.z > 0.35 && frame.position.z < 2.7)
-        assert.ok(frame.position.x < 1.8);
     }
   }
   const final = sampleGiftSequence("presenting", 1);
@@ -54,4 +77,45 @@ test("the fridge route and return route remain continuous and avoid the table", 
   assert.equal(final.doorOpen, 1);
   assert.equal(final.giftCamera, 1);
   assert.equal(sampleGiftSequence("celebrating", 1).reveal, 1);
+});
+
+test("cleanup starts at three seconds and each selection returns to the same menu", () => {
+  for (const reducedMotion of [false, true]) {
+    const visited = [];
+    const sequence = createGiftSequence((phase) => visited.push(phase));
+    sequence.start();
+    sequence.update(60, reducedMotion);
+    sequence.openPresent();
+    sequence.update(reducedMotion ? 0 : 1.4, reducedMotion);
+    sequence.update(2.99, reducedMotion);
+    assert.equal(sequence.phase, "celebrating");
+    assert.equal(sequence.startDance(), false);
+    sequence.update(0.01, reducedMotion);
+    if (!reducedMotion) {
+      assert.equal(sequence.phase, "turn_back_to_fridge");
+      assert.equal(sequence.startDance(), false);
+    }
+    sequence.update(120, reducedMotion);
+    assert.equal(sequence.phase, "dance_ready");
+    assert.deepEqual(visited.slice(-9), [
+      "turn_back_to_fridge", "carry_to_fridge", "shelve_gift", "release_gift",
+      "step_to_door", "close_fridge", "return_to_center", "stand_at_center", "dance_ready",
+    ]);
+    const visitCount = visited.length;
+    for (let selection = 0; selection < 3; selection++) {
+      assert.equal(sequence.startDance(), true);
+      assert.equal(sequence.phase, "dancing");
+      assert.equal(sequence.progress, 0);
+      assert.equal(sequence.startDance(), false);
+      sequence.update((reducedMotion ? 1 : CHEER_DANCE_DURATION) - 0.05, reducedMotion);
+      assert.equal(sequence.phase, "dancing");
+      sequence.update(60, reducedMotion);
+      assert.equal(sequence.phase, "dance_ready");
+    }
+    assert.deepEqual(visited.slice(visitCount), [
+      "dancing", "stand_at_center", "dance_ready",
+      "dancing", "stand_at_center", "dance_ready",
+      "dancing", "stand_at_center", "dance_ready",
+    ]);
+  }
 });

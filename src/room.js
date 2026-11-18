@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { fridgeLayout, doorGrip } from "./fridge-layout.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 function surface(color, map = null) {
@@ -40,1095 +41,263 @@ function cylinder(
   return mesh;
 }
 
-function disc(parent, name, radius, depth, position, material) {
-  const mesh = cylinder(
-    parent,
-    name,
-    radius,
-    radius,
-    depth,
-    position,
-    material,
-  );
-  mesh.rotation.x = Math.PI / 2;
-  return mesh;
-}
-
-function texture(width, height, draw) {
+// Each tile is a rectified prop face, not an entire room view. Geometry
+// supplies the depth and occlusion when the camera or refrigerator moves.
+function tileMaterial(atlas, index, fallback, repeatX = 1, repeatY = 1) {
+  if (!atlas) return surface(fallback);
   const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  draw(canvas.getContext("2d"), width, height);
+  canvas.width = canvas.height = 138;
+  canvas.getContext("2d").drawImage(atlas,
+    (index % 4) * 144 + 3, Math.floor(index / 4) * 144 + 3, 138, 138,
+    0, 0, 138, 138);
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
-  map.anisotropy = 8;
-  return map;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(repeatX, repeatY);
+  map.anisotropy = 4;
+  return new THREE.MeshBasicMaterial({ map });
 }
 
-function panel(parent, name, width, height, position, map) {
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(width, height),
-    surface(0xffffff, map),
-  );
+function panel(parent, name, w, h, pos, material) {
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), material);
   mesh.name = name;
-  mesh.position.set(...position);
+  mesh.position.set(...pos);
   parent.add(mesh);
   return mesh;
 }
 
-function woodTexture() {
-  return texture(256, 512, (ctx, width, height) => {
-    ctx.fillStyle = "#866247";
-    ctx.fillRect(0, 0, width, height);
-    for (let x = 0; x < width; x += 1) {
-      ctx.strokeStyle = `rgba(39,24,13,${0.03 + (x % 17) * 0.008})`;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.bezierCurveTo(x + 9 * Math.sin(x), 140, x - 7, 340, x, height);
-      ctx.stroke();
-    }
-    ctx.strokeStyle = "#d0a67e30";
-    for (let y = 0; y < height; y += 37) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y + 4);
-      ctx.stroke();
-    }
-  });
+function group(parent, name, x, z) {
+  const g = new THREE.Group();
+  g.name = name;
+  g.position.set(x, 0, z);
+  parent.add(g);
+  return g;
 }
 
-function plasterTexture() {
-  return texture(256, 256, (ctx, width, height) => {
-    const pixels = ctx.createImageData(width, height);
-    let seed = 1763;
-    for (let i = 0; i < pixels.data.length; i += 4) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      const grain = (seed / 4294967296) * 7 - 3.5;
-      pixels.data[i] = 221 + grain;
-      pixels.data[i + 1] = 212 + grain;
-      pixels.data[i + 2] = 186 + grain;
-      pixels.data[i + 3] = 255;
+const halfWidth = 11.1;
+const backZ = -4.9;
+const frontZ = 11.94;
+const ceilingY = 13.0;
+const entryZ = -0.57, entryHalfWidth = 4.04, entryHeight = 10.46;
+
+function makeShell(root, wall, timber, ceiling, straw) {
+  const depth = frontZ - backZ;
+  const midZ = (backZ + frontZ) / 2;
+  const sideWall = wall.clone();
+  sideWall.color.multiplyScalar(0.30);
+  box(root, "Back plaster wall", [2 * halfWidth, ceilingY, 0.16], [0, ceilingY / 2, backZ - 0.08], wall);
+  box(root, "Dark wooden ceiling", [2 * halfWidth, 0.14, depth], [0, ceilingY + 0.07, midZ], ceiling);
+  for (const side of [-1, 1]) {
+    const x = side * halfWidth;
+    const spans = side < 0 ? [[backZ, frontZ]] :
+      [[backZ, entryZ - entryHalfWidth], [entryZ + entryHalfWidth, frontZ]];
+    for (const [from, to] of spans) {
+      box(root, "Side plaster wall", [0.16, ceilingY, to - from], [x + side * 0.08, ceilingY / 2, (from + to) / 2], sideWall);
+      box(root, "Side wall rail", [0.12, 0.27, to - from], [x - side * 0.06, 0.13, (from + to) / 2], timber);
     }
-    ctx.putImageData(pixels, 0, 0);
-  });
+    if (side > 0) box(root, "Plaster above entrance", [0.16, ceilingY - entryHeight, 2 * entryHalfWidth],
+      [x + 0.08, (ceilingY + entryHeight) / 2, entryZ], sideWall);
+    box(root, "Back corner post", [0.42, ceilingY, 0.36], [x - side * 0.19, ceilingY / 2, backZ + 0.15], timber);
+    box(root, "Side wall rail", [0.12, 0.27, depth], [x - side * 0.06, 10.69, midZ], timber);
+  }
+  for (const y of [0.13, 10.69])
+    box(root, "Back wall rail", [2 * halfWidth, 0.27, 0.14], [0, y, backZ + 0.06], timber);
+
+  box(root, "Woven tatami floor", [2 * halfWidth, 0.12, depth], [0, -0.06, midZ], straw);
+  const shadows = new THREE.Mesh(new THREE.PlaneGeometry(2 * halfWidth, depth),
+    new THREE.ShadowMaterial({ opacity: 0.22, depthWrite: false }));
+  shadows.rotation.x = -Math.PI / 2;
+  shadows.position.set(0, 0.003, midZ);
+  shadows.receiveShadow = true;
+  root.add(shadows);
+  const edging = surface(0x342724);
+  // The two long borders frame the central mat in the front view.
+  const middleZ = -1.85;
+  const crossZ = 0.40;
+  for (const x of [-5.35, 5.35])
+    box(root, "Tatami cloth edge", [0.17, 0.012, crossZ - backZ], [x, 0.006, (crossZ + backZ) / 2], edging);
+  box(root, "Central mat seam", [10.7, 0.012, 0.14], [0, 0.007, middleZ], edging);
+  box(root, "Tatami cross seam", [2 * halfWidth, 0.012, 0.14], [0, 0.007, crossZ], edging);
+  box(root, "Front tatami seam", [0.1, 0.012, frontZ - crossZ], [0, 0.006, (frontZ + crossZ) / 2], edging);
 }
 
-function tatamiTexture() {
-  return texture(512, 1024, (ctx, width, height) => {
-    ctx.fillStyle = "#c3bd87";
-    ctx.fillRect(0, 0, width, height);
-    for (let y = 0; y < height; y += 3) {
-      ctx.fillStyle = y % 12 === 0 ? "#a8a574" : "#b2af7e";
-      ctx.fillRect(0, y, width, 1.2);
-      ctx.fillStyle = "#d3cc96";
-      ctx.fillRect(0, y + 1, width, 1);
-    }
-    for (let x = 0; x < width; x += 12) {
-      ctx.fillStyle = "#d4cf9926";
-      ctx.fillRect(x, 0, 1, height);
-    }
-  });
-}
-
-function makeWindow(parent, wood) {
-  const window = new THREE.Group();
-  window.position.set(-6.1, 4.15, -0.25);
+function makeSideWalls(root, materials) {
+  const window = group(root, "Left wooden window", -halfWidth + 0.1, 0.65);
   window.rotation.y = Math.PI / 2;
-  parent.add(window);
-  box(window, "Window recess", [3.9, 3.15, 0.12], [0, 0, 0], surface(0x6b6750));
-  const scenery = texture(320, 256, (ctx, width, height) => {
-    const sky = ctx.createLinearGradient(0, 0, 0, height);
-    sky.addColorStop(0, "#9cbcc4");
-    sky.addColorStop(0.65, "#dce0bd");
-    sky.addColorStop(1, "#7e9770");
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = "#789276";
-    ctx.beginPath();
-    ctx.moveTo(0, height);
-    ctx.lineTo(0, 190);
-    ctx.bezierCurveTo(70, 120, 110, 190, 170, 160);
-    ctx.bezierCurveTo(230, 120, 260, 150, width, 115);
-    ctx.lineTo(width, height);
-    ctx.fill();
-    ctx.fillStyle = "#ffffef9c";
-    ctx.fillRect(25, 25, 60, 14);
-    ctx.fillRect(165, 51, 77, 10);
-  });
-  panel(window, "Daylight outside", 3.65, 2.9, [0, 0, 0.08], scenery);
-  for (const x of [-1.95, 0, 1.95])
-    box(window, "Wooden window frame", [0.105, 3.2, 0.16], [x, 0, 0.17], wood);
-  for (const y of [-1.6, 0, 1.6])
-    box(window, "Wooden window frame", [4, 0.105, 0.16], [0, y, 0.17], wood);
-  box(window, "Window sill", [4.2, 0.17, 0.45], [0, -1.67, 0.2], wood);
+  panel(window, "Windowpanes and landscape", 6.65, 5.25, [0, 6.68, 0.07], materials.window);
+  for (const x of [-3.42, 0, 3.42])
+    box(window, "Window stile", [0.19, 5.66, 0.21], [x, 6.68, 0.13], materials.wood);
+  for (const y of [3.94, 9.42])
+    box(window, "Window frame", [7.03, 0.21, 0.24], [0, y, 0.13], materials.wood);
+
+  const doors = group(root, "Right sliding entrance", halfWidth - 0.09, entryZ);
+  doors.rotation.y = -Math.PI / 2;
+  const frame = surface(0x3c271f), paper = surface(0x99978d);
+  let moving, handle;
   for (const side of [-1, 1]) {
-    const curtain = new THREE.Group();
-    curtain.position.set(side * 1.68, 0, 0.32);
-    window.add(curtain);
-    const cloth = surface(0xc9bc7f);
-    for (let i = 0; i < 5; i += 1) {
-      box(
-        curtain,
-        "Folded curtain",
-        [0.13, 3.25, 0.12],
-        [(i - 2) * 0.12, 0, Math.sin(i * 2) * 0.07],
-        cloth,
-        0.035,
-      );
-    }
+    const leaf = group(doors, side > 0 ? "Moving entrance door" : "Fixed entrance door", side * 2, side < 0 ? 0.08 : 0.27);
+    box(leaf, "Sliding door panel", [3.98, 10.25, 0.12], [0, 5.17, 0], paper);
+    box(leaf, "Door lower wood band", [3.98, 0.55, 0.045], [0, 2.44, 0.08], materials.wood);
+    const pull = box(leaf, "Recessed sliding pull", [0.26, 0.68, 0.04], [side * 1.17, 2.47, 0.1], frame);
+    box(leaf, "Door meeting stile", [0.09, 10.25, 0.16], [-side * 1.94, 5.17, 0], frame);
+    if (side > 0) { moving = leaf; handle = pull; }
+  }
+  for (const x of [-4.04, 4.04])
+    box(doors, "Cupboard jamb", [0.2, 10.61, 0.35], [x, 5.3, 0.17], materials.wood);
+  for (const y of [0.10, 10.46])
+    box(doors, "Sliding track", [8.28, 0.21, 0.38], [0, y, 0.17], frame);
+  box(doors, "Wall switch", [0.38, 0.66, 0.08], [4.84, 3.05, 0.11], surface(0xb2a37a));
+  box(doors, "Switch toggle", [0.1, 0.22, 0.07], [4.84, 3.06, 0.18], frame);
+  box(doors, "Hallway floorboards", [14, 0.16, 6.4], [0, -0.08, -3.10], materials.wood);
+  box(doors, "Hallway plaster", [14, 11, 0.14], [0, 5.5, -6.23], surface(0xbcb18d));
+  box(doors, "Hallway skirting", [14, 1.5, 0.18], [0, 0.75, -6.19], materials.wood);
+  for (const x of [-5, 0, 5])
+    box(doors, "Hallway post", [0.14, 11, 0.16], [x, 5.5, -6.13], materials.wood);
+  return {
+    stance: doors.localToWorld(new THREE.Vector3(1.95, 0, 1.12)),
+    outside: doors.localToWorld(new THREE.Vector3(4.8, 0, -3.2)),
+    setOpen(amount) { moving.position.x = 2 - 4 * amount; },
+    getPullPosition(target) { return handle.getWorldPosition(target); },
+  };
+}
+
+function makeBackFurniture(root, m) {
+  const olive = surface(0x796d29), drawer = surface(0x949044), dark = surface(0x33251e);
+  const cabinet = group(root, "Olive drawer cabinet", -9.05, -3.93);
+  box(cabinet, "Cabinet carcass", [3.25, 4.62, 1.64], [0, 2.31, 0], olive);
+  for (let row = 0; row < 3; row++) {
+    const y = 0.8 + row * 1.5;
+    box(cabinet, "Olive drawer", [3.04, 1.38, 0.09], [0, y, 0.84], drawer);
+    box(cabinet, "Drawer knob", [0.29, 0.24, 0.19], [0, y + 0.33, 0.96], olive, 0.045);
+  }
+  function speaker(parent, x, y, z) {
+    box(parent, "Cloth-covered loudspeaker", [1.86, 2.58, 1.50], [x, y + 1.29, z], dark);
+    panel(parent, "Speaker grille", 1.86, 2.58, [x, y + 1.29, z + 0.754], m.speaker);
+  }
+  speaker(cabinet, -0.48, 4.62, -0.08);
+  const chest = group(root, "Dark lacquer chest", -4.62, -3.88);
+  box(chest, "Chest case", [5.48, 4.46, 1.65], [0, 2.23, 0], surface(0x341e19));
+  panel(chest, "Chest doors and lower drawer", 5.48, 4.46, [0, 2.23, 0.831], m.chest);
+  const stereo = group(root, "Silver component stereo", -0.49, -3.89);
+  box(stereo, "Stereo chassis", [2.8, 3.27, 1.59], [0, 1.635, 0], surface(0x888b83));
+  panel(stereo, "Stacked hi-fi components", 2.8, 3.27, [0, 1.635, 0.80], m.stereo);
+  speaker(root, 1.86, 0, -3.86);
+  const bag = group(root, "Red school satchel", 4.11, -3.52);
+  const leather = surface(0x87253c);
+  box(bag, "Leather satchel body", [2.42, 1.43, 0.90], [0, 0.74, 0], leather, 0.12);
+  panel(bag, "Flap, buckles and straps", 2.36, 1.37, [0, 0.75, 0.455], m.bag);
+  for (const x of [-0.34, 0.34]) box(bag, "Handle end", [0.11, 0.22, 0.14], [x, 1.52, 0], leather);
+  box(bag, "Satchel handle", [0.76, 0.1, 0.14], [0, 1.65, 0], leather, 0.035);
+}
+
+function makeTelevision(root, wood) {
+  const tv = group(root, "Wooden leg television", -7.1, 2.22);
+  tv.rotation.y = -0.62;
+  const shell = surface(0x53371e), dark = surface(0x1d1915);
+  box(tv, "Television housing", [2.48, 1.91, 1.60], [0, 2.6, 0], shell, 0.045);
+  box(tv, "CRT screen", [1.77, 1.22, 0.085], [-0.14, 2.66, 0.81], surface(0x141a19), 0.095);
+  for (const x of [-0.90, 0.90]) for (const z of [-0.55, 0.55]) {
+    const leg = cylinder(tv, "Splayed television leg", 0.12, 0.065, 1.77, [x * 1.12, 0.84, z * 1.14], wood, 8);
+    leg.rotation.z = x * 0.13;
+    leg.rotation.x = -z * 0.22;
+  }
+  const consoleSet = group(root, "Console and controller", -6.65, 1.28);
+  box(consoleSet, "Low black console", [1.40, 0.23, 0.94], [0, 0.13, 0], dark, 0.045);
+  box(consoleSet, "Console cartridge cover", [0.83, 0.09, 0.60], [-0.06, 0.28, 0], dark, 0.04);
+  const wire = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.47, 0.13, -0.40), new THREE.Vector3(0.86, 0.04, -0.79),
+    new THREE.Vector3(1.16, 0.04, -0.86), new THREE.Vector3(1.39, 0.06, -0.99),
+  ]);
+  consoleSet.add(new THREE.Mesh(new THREE.TubeGeometry(wire, 20, 0.025, 5, false), dark));
+  box(consoleSet, "Wired controller", [0.55, 0.12, 0.29], [1.6, 0.085, -0.99], dark, 0.045);
+}
+
+function makeWallArt(root, m) {
+  const z = backZ + 0.15;
+  panel(root, "Small framed animal print", 3.57, 2.02, [-7.75, 8.76, z], m.print);
+  panel(root, "Blue Hand poster", 3.35, 4.28, [5.53, 8.05, z], m.poster);
+  const pennant = new THREE.BufferGeometry();
+  pennant.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, 4.32, 0.90, 0, 0, 1.82, 0], 3));
+  pennant.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0.48, 0, 1], 2));
+  const flag = new THREE.Mesh(pennant, m.pennant);
+  flag.name = "Triangular souvenir pennant";
+  flag.position.set(-10.73, 10.98, z);
+  root.add(flag);
+}
+
+function makeBasket(root) {
+  const g = group(root, "Woven basket by the sliding door", 10.03, 4.59);
+  const wicker = surface(0xb59361), weave = surface(0x755935);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.80, 0.73, 0.75, 20, 1, true), weave);
+  body.position.y = 0.40;
+  g.add(body);
+  cylinder(g, "Basket interior", 0.74, 0.73, 0.05, [0, 0.10, 0], surface(0x4b3726), 20);
+  for (let n = 0; n < 20; n++) {
+    const angle = n * Math.PI / 10;
+    const stave = box(g, "Wicker upright", [0.085, 0.70, 0.055],
+      [0.77 * Math.sin(angle), 0.42, 0.77 * Math.cos(angle)], wicker);
+    stave.rotation.y = angle;
+  }
+  for (const y of [0.13, 0.32, 0.52, 0.74]) {
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.735 + y * 0.085, 0.052, 5, 24), wicker);
+    hoop.rotation.x = Math.PI / 2;
+    hoop.position.y = y;
+    g.add(hoop);
   }
 }
 
-function makeChest(parent, wood, darkWood) {
-  const chest = new THREE.Group();
-  chest.position.set(-4.25, 0, -3.75);
-  parent.add(chest);
-  box(
-    chest,
-    "Wooden chest of drawers",
-    [2.9, 2.5, 1.3],
-    [0, 1.3, 0],
-    darkWood,
-    0.04,
-  );
-  box(chest, "Chest top", [3.02, 0.13, 1.4], [0, 2.58, 0], wood, 0.025);
-  for (let row = 0; row < 4; row += 1) {
-    const y = 0.37 + row * 0.56;
-    box(chest, "Drawer front", [2.68, 0.5, 0.11], [0, y, 0.68], wood, 0.015);
-    for (const x of [-0.77, 0.77]) {
-      box(
-        chest,
-        "Brass drawer handle",
-        [0.33, 0.055, 0.08],
-        [x, y + 0.04, 0.78],
-        surface(0xc6a86c),
-        0.02,
-      );
-    }
-  }
-  const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.72, 0.17, 10, 48),
-    surface(0xd7e4e9),
-  );
-  ring.position.set(-0.1, 3.53, 0.08);
-  chest.add(ring);
-  for (let i = 0; i < 4; i += 1) {
-    const arc = new THREE.Mesh(
-      new THREE.TorusGeometry(0.724, 0.175, 10, 10, Math.PI / 4),
-      surface(0x638db4),
-    );
-    arc.position.copy(ring.position);
-    arc.rotation.z = (i * Math.PI) / 2;
-    chest.add(arc);
-  }
-}
+function makeFridge(parent, front) {
+  const { x, frontZ, width, depth, height, shelfY, swing } = fridgeLayout;
+  const fridge = group(parent, "Refrigerator", x, frontZ);
+  const enamel = surface(0xbec2b6), liner = surface(0xe2e2d2);
+  const cabinetSide = surface(0x737870);
+  for (const side of [-1, 1])
+    box(fridge, "Refrigerator side", [0.11, height, depth], [side * (width - 0.11) / 2, height / 2, -depth / 2],
+      [side > 0 ? cabinetSide : liner, side < 0 ? cabinetSide : liner, enamel, enamel, enamel, enamel]);
+  for (const y of [0.07, height - 0.07])
+    box(fridge, "Refrigerator end panel", [width - 0.18, 0.14, depth], [0, y, -depth / 2], enamel);
+  box(fridge, "Refrigerator back", [width - 0.18, height - 0.24, 0.10], [0, height / 2, -depth + 0.05], liner);
+  for (const y of [shelfY, 3.10, 4.12])
+    box(fridge, "Interior shelf", [width - 0.22, 0.06, depth - 0.21], [0, y - 0.03, -depth / 2], liner, 0.02);
 
-function makeStereo(parent, wood) {
-  const stereo = new THREE.Group();
-  stereo.position.set(-0.65, 0, -3.9);
-  parent.add(stereo);
-  const black = surface(0x30332f);
-  const panelGrey = surface(0x474a45);
-  for (let row = 0; row < 4; row += 1) {
-    const y = 0.3 + row * 0.47;
-    box(
-      stereo,
-      "Stereo component",
-      [1.75, 0.44, 0.88],
-      [0, y, 0],
-      black,
-      0.025,
-    );
-    box(
-      stereo,
-      "Stereo front panel",
-      [1.62, 0.34, 0.04],
-      [0, y, 0.46],
-      panelGrey,
-    );
-    box(
-      stereo,
-      "Stereo display",
-      [0.52, 0.105, 0.015],
-      [-0.1, y + 0.025, 0.49],
-      surface(0x81937d),
-    );
-    for (const x of [-0.63, 0.62])
-      disc(
-        stereo,
-        "Stereo control knob",
-        0.065,
-        0.04,
-        [x, y, 0.5],
-        surface(0x96988a),
-      );
-    box(
-      stereo,
-      "Stereo cassette slot",
-      [0.38, 0.028, 0.02],
-      [0.34, y - 0.08, 0.495],
-      black,
-    );
-  }
-  for (const side of [-1, 1]) {
-    const x = side * 1.5;
-    box(stereo, "Wooden speaker", [1.1, 2.08, 1], [x, 1.07, 0], wood, 0.025);
-    box(
-      stereo,
-      "Speaker front",
-      [0.99, 1.94, 0.03],
-      [x, 1.07, 0.515],
-      surface(0x5f5038),
-    );
-    disc(
-      stereo,
-      "Woofer surround",
-      0.41,
-      0.03,
-      [x, 0.81, 0.55],
-      surface(0x202824),
-    );
-    const cone = disc(
-      stereo,
-      "Speaker cone",
-      0.34,
-      0.04,
-      [x, 0.81, 0.57],
-      surface(0x535951),
-    );
-    cone.scale.z = 0.6;
-    disc(stereo, "Speaker dust cap", 0.105, 0.07, [x, 0.81, 0.61], black);
-    disc(
-      stereo,
-      "Tweeter trim",
-      0.18,
-      0.04,
-      [x, 1.62, 0.55],
-      surface(0xbfc0a9),
-    );
-    disc(stereo, "Tweeter", 0.115, 0.05, [x, 1.62, 0.59], black);
-  }
-  const basket = surface(0x74915d);
-  box(stereo, "Green cassette basket", [0.76, 0.35, 0.5], [0, 2.19, 0], basket);
-  for (const x of [-0.3, 0.3])
-    box(stereo, "Basket handle", [0.05, 0.26, 0.05], [x, 2.48, 0], basket);
-  box(stereo, "Basket handle top", [0.65, 0.045, 0.05], [0, 2.6, 0], basket);
-}
-
-function makeBookshelf(parent, wood, darkWood) {
-  const shelf = new THREE.Group();
-  shelf.position.set(-5.72, 0, -0.55);
-  shelf.rotation.y = Math.PI / 2;
-  parent.add(shelf);
-  box(shelf, "Bookcase back", [2.5, 3.2, 0.09], [0, 1.65, -0.3], darkWood);
-  for (const x of [-1.25, 1.25])
-    box(shelf, "Bookcase side", [0.12, 3.35, 0.75], [x, 1.67, 0], wood);
-  for (let i = 0; i < 4; i += 1)
-    box(
-      shelf,
-      "Bookshelf board",
-      [2.6, 0.1, 0.8],
-      [0, 0.1 + i * 1.06, 0],
-      wood,
-    );
-  const colors = [
-    0x8b5146, 0x668078, 0xd1c49a, 0x555b62, 0xc39a60, 0x89977c, 0xc5c8b9,
-  ];
-  for (let row = 0; row < 3; row += 1) {
-    for (let i = 0; i < 11; i += 1) {
-      const x = -1.09 + i * 0.198;
-      const height = 0.66 + ((i * 7 + row * 3) % 5) * 0.055;
-      const book = box(
-        shelf,
-        "Book",
-        [0.15, height, 0.46],
-        [x, 0.18 + row * 1.06 + height / 2, 0.06],
-        surface(colors[(i + row * 2) % colors.length]),
-      );
-      if (i === 9) book.rotation.z = 0.09;
-      box(
-        shelf,
-        "Book spine label",
-        [0.08, 0.2, 0.012],
-        [x, 0.51 + row * 1.06, 0.302],
-        surface(0xe8e0c9),
-      );
-    }
-  }
-  disc(
-    shelf,
-    "Alarm clock case",
-    0.28,
-    0.13,
-    [0.5, 3.55, 0],
-    surface(0x984b43),
-  );
-  disc(
-    shelf,
-    "Alarm clock face",
-    0.235,
-    0.015,
-    [0.5, 3.55, 0.08],
-    surface(0xf3ead1),
-  );
-  const hour = box(
-    shelf,
-    "Clock hour hand",
-    [0.027, 0.15, 0.02],
-    [0.46, 3.59, 0.1],
-    darkWood,
-  );
-  hour.rotation.z = 0.8;
-  const minute = box(
-    shelf,
-    "Clock minute hand",
-    [0.02, 0.21, 0.02],
-    [0.56, 3.61, 0.105],
-    darkWood,
-  );
-  minute.rotation.z = -0.8;
-}
-
-function makeFan(parent) {
-  const fan = new THREE.Group();
-  fan.position.set(-3.1, 0, -0.65);
-  fan.rotation.y = 0.17;
-  parent.add(fan);
-  const enamel = surface(0xb7c6bc);
-  const metal = new THREE.MeshStandardMaterial({
-    color: 0x9eaaa1,
-    metalness: 0.55,
-    roughness: 0.5,
-  });
-  box(fan, "Fan base", [0.91, 0.16, 0.72], [0, 0.1, 0.06], enamel, 0.07);
-  cylinder(fan, "Fan stand", 0.065, 0.075, 1.25, [0, 0.77, 0], enamel);
-  disc(fan, "Fan motor", 0.19, 0.36, [0, 1.64, -0.08], enamel);
-  const blades = new THREE.Group();
-  blades.position.set(0, 1.64, 0.18);
-  fan.add(blades);
-  for (let i = 0; i < 3; i += 1) {
-    const blade = box(
-      blades,
-      "Fan blade",
-      [0.24, 0.54, 0.04],
-      [
-        Math.sin((i * Math.PI * 2) / 3) * 0.24,
-        Math.cos((i * Math.PI * 2) / 3) * 0.24,
-        0,
-      ],
-      surface(0x839494),
-      0.09,
-    );
-    blade.rotation.z = (-i * Math.PI * 2) / 3 - 0.3;
-  }
-  for (const radius of [0.2, 0.39, 0.58, 0.68]) {
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(radius, 0.012, 4, 48),
-      metal,
-    );
-    ring.position.set(0, 1.64, 0.25);
-    fan.add(ring);
-  }
-  for (let i = 0; i < 12; i += 1) {
-    const spoke = box(
-      fan,
-      "Fan grille spoke",
-      [0.012, 1.33, 0.012],
-      [0, 1.64, 0.26],
-      metal,
-    );
-    spoke.rotation.z = (i * Math.PI) / 12;
-  }
-  disc(fan, "Fan central cap", 0.105, 0.065, [0, 1.64, 0.29], enamel);
-  return blades;
-}
-
-function makeTelevision(parent, wood) {
-  const tv = new THREE.Group();
-  tv.position.set(-3.9, 0, 2.7);
-  tv.rotation.y = 0.3;
-  parent.add(tv);
-  for (const x of [-0.83, 0.83]) {
-    for (const z of [-0.35, 0.35])
-      box(tv, "TV stand leg", [0.12, 0.63, 0.12], [x, 0.32, z], wood);
-  }
-  box(tv, "Low TV stand", [2.15, 0.23, 1.08], [0, 0.73, 0], wood, 0.04);
-  box(
-    tv,
-    "CRT television cabinet",
-    [1.93, 1.46, 1.12],
-    [0, 1.57, 0],
-    surface(0x514d3d),
-    0.12,
-  );
-  box(
-    tv,
-    "CRT bezel",
-    [1.66, 1.18, 0.13],
-    [-0.07, 1.59, 0.59],
-    surface(0x242e2a),
-    0.1,
-  );
-  const screen = texture(256, 192, (ctx, width, height) => {
-    const glow = ctx.createRadialGradient(125, 70, 5, 125, 90, 180);
-    glow.addColorStop(0, "#779a9a");
-    glow.addColorStop(1, "#263e40");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = "#c0d5cb16";
-    for (let y = 0; y < height; y += 3) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
-    ctx.fillStyle = "#dbe5d82b";
-    ctx.beginPath();
-    ctx.moveTo(20, 12);
-    ctx.lineTo(160, 12);
-    ctx.lineTo(50, 75);
-    ctx.lineTo(20, 75);
-    ctx.fill();
-  });
-  box(
-    tv,
-    "Rounded CRT screen",
-    [1.35, 0.95, 0.065],
-    [-0.17, 1.62, 0.685],
-    surface(0xffffff, screen),
-    0.09,
-  );
-  for (const y of [1.34, 1.76])
-    disc(
-      tv,
-      "Television tuning knob",
-      0.073,
-      0.05,
-      [0.72, y, 0.69],
-      surface(0xb0a690),
-    );
-  for (const side of [-1, 1]) {
-    const antenna = cylinder(
-      tv,
-      "TV antenna",
-      0.013,
-      0.013,
-      1.0,
-      [side * 0.23, 2.66, -0.18],
-      surface(0x8f9488),
-      8,
-    );
-    antenna.rotation.z = side * 0.48;
-  }
-}
-
-function makeFridge(parent) {
-  const fridge = new THREE.Group();
-  fridge.position.set(4.82, 0, -3.67);
-  parent.add(fridge);
-  const enamel = surface(0xe5e4cf);
-  const liner = surface(0xf6f2df);
-  box(
-    fridge,
-    "Refrigerator back",
-    [1.7, 3.38, 0.12],
-    [0, 1.75, -0.69],
-    enamel,
-    0.04,
-  );
-  for (const x of [-0.8, 0.8])
-    box(
-      fridge,
-      "Refrigerator side",
-      [0.1, 3.38, 1.5],
-      [x, 1.75, 0],
-      enamel,
-      0.04,
-    );
-  box(
-    fridge,
-    "Refrigerator base",
-    [1.6, 0.14, 1.5],
-    [0, 0.13, 0],
-    enamel,
-    0.025,
-  );
-  box(
-    fridge,
-    "Refrigerator upper cabinet",
-    [1.6, 1.04, 1.5],
-    [0, 2.92, 0],
-    enamel,
-    0.04,
-  );
-  box(
-    fridge,
-    "Cream refrigerator liner",
-    [1.48, 2.15, 0.035],
-    [0, 1.34, -0.6],
-    liner,
-    0.012,
-  );
-  for (const y of [0.23, 1.08, 2.2])
-    box(
-      fridge,
-      "Interior shelf",
-      [1.42, 0.055, 1.24],
-      [0, y, 0.03],
-      liner,
-      0.014,
-    );
-  const door = new THREE.Group();
-  door.name = "Hinged refrigerator door";
-  door.position.set(0.795, 0, 0.79);
-  fridge.add(door);
-  box(
-    fridge,
-    "Freezer door",
-    [1.59, 0.88, 0.095],
-    [0, 2.9, 0.79],
-    surface(0xf0edda),
-    0.035,
-  );
-  box(
-    door,
-    "Fridge door",
-    [1.59, 2.14, 0.095],
-    [-0.795, 1.33, 0],
-    enamel,
-    0.04,
-  );
-  box(
-    door,
-    "Inner door liner",
-    [1.43, 1.98, 0.04],
-    [-0.795, 1.33, -0.065],
-    liner,
-    0.025,
-  );
-  box(
-    fridge,
-    "Freezer handle",
-    [0.34, 0.055, 0.07],
-    [-0.44, 2.67, 0.9],
-    surface(0xb7b9a6),
-    0.02,
-  );
-  const handle = box(
-    door,
-    "Refrigerator handle",
-    [0.34, 0.055, 0.07],
-    [-1.235, 2, 0.11],
-    surface(0xb7b9a6),
-    0.02,
-  );
-  const note = texture(96, 128, (ctx, width, height) => {
-    ctx.fillStyle = "#e8d5a0";
-    ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = "#8f5949";
-    ctx.font = "22px serif";
-    ctx.fillText("お", 35, 37);
-    ctx.fillText("や", 35, 64);
-    ctx.fillText("つ", 35, 91);
-  });
-  const sticker = panel(
-    door,
-    "Paper note",
-    0.33,
-    0.43,
-    [-1.185, 1.24, 0.063],
-    note,
-  );
-  sticker.rotation.z = -0.08;
-  cylinder(
-    fridge,
-    "Tea tin on fridge",
-    0.17,
-    0.17,
-    0.4,
-    [0.3, 3.64, 0.14],
-    surface(0x67745a),
-  );
-  const light = new THREE.PointLight(0xffedca, 0, 2.4, 2);
-  light.position.set(0, 2.2, 0.38);
+  const door = group(fridge, "Hinged refrigerator door", width / 2, 0);
+  box(door, "Fridge door", [width, height, 0.13], [-width / 2, height / 2, 0], enamel, 0.035);
+  panel(door, "Refrigerator enamel face", width - 0.04, height - 0.04, [-width / 2, height / 2, 0.068], front);
+  box(door, "Raised vertical pull", [0.24, 1.32, 0.14], [doorGrip.x + 0.14, 4.08, 0.14], surface(0xd5d7c9), 0.065);
+  const grip = box(door, "Lower door edge grip", [0.09, 0.32, 0.09], doorGrip.toArray(), enamel, 0.03);
+  const light = new THREE.PointLight(0xfff1d9, 0, 3.4, 2);
+  light.position.set(0, 2.65, -0.48);
   fridge.add(light);
   return {
     root: fridge,
-    giftPosition: new THREE.Vector3(4.72, 1.43, -3.36),
+    giftPosition: new THREE.Vector3(x - 0.1, shelfY + 0.32, frontZ - 0.57),
     setOpen(amount) {
-      door.rotation.y = amount * 1.8;
+      door.rotation.y = amount * swing;
       light.intensity = amount * 3;
       door.updateWorldMatrix(true, true);
     },
-    getHandlePosition(target) {
-      return handle.getWorldPosition(target);
-    },
+    getHandlePosition(target) { return grip.getWorldPosition(target); },
   };
 }
 
-function makeWallDecor(parent, wood) {
-  const ice = texture(160, 240, (ctx, width, height) => {
-    ctx.fillStyle = "#f0ebda";
-    ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = "#a25141";
-    ctx.lineWidth = 8;
-    ctx.strokeRect(4, 4, width - 8, height - 8);
-    ctx.fillStyle = "#b74234";
-    ctx.font = "bold 124px serif";
-    ctx.textAlign = "center";
-    ctx.fillText("氷", 80, 150);
-    ctx.fillStyle = "#55798b";
-    for (let i = 0; i < 5; i += 1) {
-      ctx.fillRect(14, 178 + i * 9, 132, 3);
-    }
-  });
-  panel(parent, "Shaved ice poster", 1.0, 1.5, [-3.25, 5.45, -4.58], ice);
-  const calendar = texture(192, 256, (ctx, width, height) => {
-    ctx.fillStyle = "#f2edde";
-    ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = "#a2b4a0";
-    ctx.fillRect(10, 10, 172, 89);
-    ctx.fillStyle = "#58755a";
-    ctx.beginPath();
-    ctx.moveTo(10, 99);
-    ctx.lineTo(75, 25);
-    ctx.lineTo(150, 99);
-    ctx.fill();
-    ctx.fillStyle = "#444c3f";
-    ctx.font = "bold 24px serif";
-    ctx.textAlign = "center";
-    ctx.fillText("8", 96, 126);
-    ctx.font = "13px sans-serif";
-    for (let n = 1; n <= 31; n += 1) {
-      ctx.fillStyle = n % 7 === 1 ? "#a95041" : "#55594c";
-      ctx.fillText(
-        String(n),
-        20 + ((n - 1) % 7) * 25,
-        152 + Math.floor((n - 1) / 7) * 21,
-      );
-    }
-  });
-  panel(parent, "Wall calendar", 0.95, 1.27, [2.5, 5.5, -4.58], calendar);
-  const scroll = texture(160, 400, (ctx, width, height) => {
-    ctx.fillStyle = "#a7ac92";
-    ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = "#eae3cc";
-    ctx.fillRect(13, 53, 134, 286);
-    ctx.fillStyle = "#454b3e";
-    ctx.font = "31px serif";
-    ctx.textAlign = "center";
-    Array.from("どこでも").forEach((letter, i) =>
-      ctx.fillText(letter, 107, 97 + i * 47),
-    );
-    Array.from("いっしょ").forEach((letter, i) =>
-      ctx.fillText(letter, 53, 139 + i * 47),
-    );
-    ctx.fillStyle = "#ad6c53";
-    ctx.fillRect(47, 303, 17, 17);
-  });
-  panel(parent, "Hanging scroll", 1.33, 3.35, [0.65, 5.4, -4.57], scroll);
-  for (const y of [3.71, 7.09])
-    cylinder(
-      parent,
-      "Scroll rod",
-      0.045,
-      0.045,
-      1.5,
-      [0.65, y, -4.53],
-      wood,
-      12,
-    ).rotation.z = Math.PI / 2;
-  const pennantMap = texture(384, 160, (ctx, width, height) => {
-    ctx.fillStyle = "#d1ae5b";
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(width, 80);
-    ctx.lineTo(0, height);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#a04c3b";
-    ctx.beginPath();
-    ctx.moveTo(9, 10);
-    ctx.lineTo(width - 25, 80);
-    ctx.lineTo(9, height - 10);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#91b6bc";
-    ctx.fillRect(12, 13, 137, 133);
-    ctx.fillStyle = "#d8e5db";
-    ctx.beginPath();
-    ctx.moveTo(15, 112);
-    ctx.lineTo(78, 27);
-    ctx.lineTo(147, 112);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#f1ecd8";
-    ctx.beginPath();
-    ctx.moveTo(78, 27);
-    ctx.lineTo(52, 63);
-    ctx.lineTo(74, 55);
-    ctx.lineTo(85, 64);
-    ctx.lineTo(96, 52);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#e8dcb5";
-    ctx.font = "bold 35px serif";
-    ctx.fillText("富士山", 164, 92);
-  });
-  const pennant = panel(
-    parent,
-    "Mount Fuji pennant",
-    2.45,
-    1.02,
-    [4.25, 5.86, -4.57],
-    pennantMap,
-  );
-  pennant.material.transparent = true;
-  pennant.material.alphaTest = 0.4;
-}
-
-function makeTelephone(parent) {
-  const phone = new THREE.Group();
-  phone.position.set(2.65, 0, -3.96);
-  phone.rotation.y = -0.12;
-  parent.add(phone);
-  const black = surface(0x292c26);
-  box(
-    phone,
-    "Rotary telephone base",
-    [0.89, 0.24, 0.7],
-    [0, 0.19, 0],
-    black,
-    0.1,
-  );
-  cylinder(
-    phone,
-    "Telephone rotary dial",
-    0.24,
-    0.24,
-    0.035,
-    [0, 0.327, 0.07],
-    surface(0xc1bda2),
-  );
-  for (let i = 0; i < 10; i += 1) {
-    cylinder(
-      phone,
-      "Dial finger hole",
-      0.03,
-      0.03,
-      0.007,
-      [
-        Math.sin((i * Math.PI) / 5) * 0.16,
-        0.35,
-        0.07 + Math.cos((i * Math.PI) / 5) * 0.16,
-      ],
-      black,
-      12,
-    );
-  }
-  box(
-    phone,
-    "Telephone handset",
-    [1.01, 0.13, 0.15],
-    [0, 0.51, -0.16],
-    black,
-    0.06,
-  );
-  for (const side of [-1, 1])
-    box(
-      phone,
-      "Handset receiver",
-      [0.2, 0.23, 0.22],
-      [side * 0.4, 0.43, -0.16],
-      black,
-      0.05,
-    );
-  const cordPoints = [];
-  for (let i = 0; i < 96; i += 1) {
-    const t = i / 95;
-    cordPoints.push(
-      new THREE.Vector3(
-        0.5 + t * 0.35 + Math.sin(t * 70) * 0.02,
-        0.03 + (1 - t) * 0.25,
-        0.06 + Math.cos(t * 70) * 0.02,
-      ),
-    );
-  }
-  phone.add(
-    new THREE.Mesh(
-      new THREE.TubeGeometry(
-        new THREE.CatmullRomCurve3(cordPoints),
-        96,
-        0.009,
-        4,
-        false,
-      ),
-      black,
-    ),
-  );
-}
-
-function makeLowTable(parent, wood) {
-  const table = new THREE.Group();
-  table.position.set(3.25, 0, 1.5);
-  table.rotation.y = -0.1;
-  parent.add(table);
-  box(
-    table,
-    "Low wooden tea table",
-    [2.2, 0.14, 1.55],
-    [0, 0.92, 0],
-    wood,
-    0.13,
-  );
-  for (const x of [-0.8, 0.8]) {
-    for (const z of [-0.52, 0.52])
-      box(table, "Low table leg", [0.16, 0.84, 0.16], [x, 0.45, z], wood, 0.02);
-  }
-  const ceramic = surface(0xa8b395);
-  cylinder(table, "Tea cup", 0.135, 0.095, 0.25, [-0.53, 1.13, 0.14], ceramic);
-  cylinder(
-    table,
-    "Tea surface",
-    0.115,
-    0.115,
-    0.01,
-    [-0.53, 1.257, 0.14],
-    surface(0x665f33),
-  );
-  cylinder(
-    table,
-    "Tea cup saucer",
-    0.21,
-    0.21,
-    0.035,
-    [-0.53, 1.012, 0.14],
-    surface(0x7c8969),
-  );
-  box(
-    table,
-    "Tissue box",
-    [0.62, 0.25, 0.37],
-    [0.46, 1.11, -0.22],
-    surface(0xa6b7a8),
-    0.025,
-  );
-  box(
-    table,
-    "Tissue box slot",
-    [0.34, 0.008, 0.03],
-    [0.46, 1.24, -0.22],
-    surface(0x637d72),
-  );
-  const tissue = box(
-    table,
-    "Folded white tissue",
-    [0.25, 0.23, 0.018],
-    [0.45, 1.33, -0.22],
-    surface(0xf5f1df),
-  );
-  tissue.rotation.z = 0.2;
-}
-
-function makeCeilingLamp(parent) {
-  const lamp = new THREE.Group();
-  lamp.position.set(0, 0, 0.1);
-  parent.add(lamp);
-  const cord = surface(0x555449);
-  cylinder(
-    lamp,
-    "Ceiling light cord",
-    0.018,
-    0.018,
-    1.04,
-    [0, 6.69, 0],
-    cord,
-    8,
-  );
-  cylinder(
-    lamp,
-    "Ceiling rose",
-    0.11,
-    0.13,
-    0.06,
-    [0, 7.2, 0],
-    surface(0xd7d3bb),
-  );
-  const shade = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.2, 0.73, 0.38, 48, 1, true),
-    new THREE.MeshStandardMaterial({
-      color: 0x557364,
-      roughness: 0.75,
-      side: THREE.DoubleSide,
-    }),
-  );
-  shade.name = "Green pendant lamp shade";
-  shade.position.set(0, 6.08, 0);
-  shade.castShadow = true;
-  lamp.add(shade);
-  const diffuser = new THREE.Mesh(
-    new THREE.CircleGeometry(0.68, 48),
-    new THREE.MeshStandardMaterial({
-      color: 0xfff0ca,
-      emissive: 0xffe7b4,
-      emissiveIntensity: 1.5,
-      side: THREE.DoubleSide,
-    }),
-  );
-  diffuser.name = "Warm ceiling light diffuser";
-  diffuser.rotation.x = -Math.PI / 2;
-  diffuser.position.set(0, 5.885, 0);
-  lamp.add(diffuser);
-}
-
-export function createRoom() {
+export function createRoom(atlas) {
   const root = new THREE.Group();
   root.name = "Toro's tatami room";
-  const wood = surface(0xffffff, woodTexture());
-  wood.bumpMap = wood.map;
-  wood.bumpScale = 0.025;
-  const darkWood = surface(0x695039);
-  const plaster = plasterTexture();
-  const wall = surface(0xffffff, plaster);
-  wall.bumpMap = plaster;
-  wall.bumpScale = 0.005;
-  box(
-    root,
-    "Raised wooden room floor",
-    [12.6, 0.25, 9.6],
-    [0, -0.2, 0],
-    darkWood,
-  );
-  box(root, "Back plaster wall", [12.6, 7.25, 0.18], [0, 3.57, -4.73], wall);
-  box(
-    root,
-    "Left wall below window",
-    [0.18, 2.55, 19.2],
-    [-6.27, 1.275, 4.8],
-    wall,
-  );
-  box(
-    root,
-    "Left wall above window",
-    [0.18, 1.55, 19.2],
-    [-6.27, 6.525, 4.8],
-    wall,
-  );
-  box(
-    root,
-    "Left wall behind window",
-    [0.18, 3.2, 2.6],
-    [-6.27, 4.15, -3.5],
-    wall,
-  );
-  box(
-    root,
-    "Left wall in front of window",
-    [0.18, 3.2, 12.7],
-    [-6.27, 4.15, 8.05],
-    wall,
-  );
-  box(root, "Right plaster wall", [0.18, 7.25, 19.2], [6.27, 3.57, 4.8], wall);
-  const ceiling = box(
-    root,
-    "Ceiling",
-    [12.7, 0.15, 19.2],
-    [0, 7.3, 4.8],
-    surface(0xe2d9bf),
-  );
-  ceiling.castShadow = true;
-  for (const x of [-6.1, 6.1]) {
-    for (const y of [0.18, 3.05, 7.15])
-      box(root, "Side wall beam", [0.2, 0.13, 19], [x, y, 4.8], wood);
-  }
-  for (const x of [-6.12, 0, 6.12])
-    box(root, "Back wall post", [0.17, 7.3, 0.22], [x, 3.6, -4.56], wood);
-  for (const z of [-4.55, 4.57])
-    box(root, "Left wall post", [0.2, 7.3, 0.16], [-6.1, 3.6, z], wood);
-  for (const y of [0.18, 3.05, 7.15]) {
-    box(root, "Back wall beam", [12.4, 0.13, 0.2], [0, y, -4.57], wood);
-    box(root, "Left wall beam", [0.2, 0.13, 9.3], [-6.1, y, 0], wood);
-  }
-  const woven = tatamiTexture();
-  const border = surface(0x566346);
-  const mats = [
-    { x: -3, z: -3, w: 6, d: 3 },
-    { x: 1.5, z: -1.5, w: 3, d: 6 },
-    { x: 4.5, z: -1.5, w: 3, d: 6 },
-    { x: -4.5, z: 1.5, w: 3, d: 6 },
-    { x: -1.5, z: 1.5, w: 3, d: 6 },
-    { x: 3, z: 3, w: 6, d: 3 },
-  ];
-  for (const [index, mat] of mats.entries()) {
-    const material = surface(index % 2 === 0 ? 0xffffff : 0xf1eddc, woven);
-    material.bumpMap = woven;
-    material.bumpScale = 0.018;
-    box(
-      root,
-      "Woven tatami mat",
-      [mat.w - 0.025, 0.08, mat.d - 0.025],
-      [mat.x, -0.04, mat.z],
-      material,
-    );
-    if (mat.w > mat.d) {
-      for (const z of [mat.z - mat.d / 2 + 0.055, mat.z + mat.d / 2 - 0.055])
-        box(
-          root,
-          "Tatami cloth edge",
-          [mat.w, 0.012, 0.11],
-          [mat.x, 0.008, z],
-          border,
-        );
-    } else {
-      for (const x of [mat.x - mat.w / 2 + 0.055, mat.x + mat.w / 2 - 0.055])
-        box(
-          root,
-          "Tatami cloth edge",
-          [0.11, 0.012, mat.d],
-          [x, 0.008, mat.z],
-          border,
-        );
-    }
-  }
-  const extraFloor = surface(0xf5efdb, woven);
-  extraFloor.bumpMap = woven;
-  extraFloor.bumpScale = 0.018;
-  for (let row = 0; row < 3; row += 1) {
-    for (let col = 0; col < 4; col += 1) {
-      const x = -4.5 + col * 3;
-      const z = 6 + row * 3;
-      box(
-        root,
-        "Front tatami mat",
-        [2.98, 0.08, 2.98],
-        [x, -0.04, z],
-        extraFloor,
-      );
-      box(
-        root,
-        "Front tatami border",
-        [0.11, 0.012, 3],
-        [x - 1.45, 0.008, z],
-        border,
-      );
-    }
-  }
-  makeWindow(root, wood);
-  makeChest(root, wood, darkWood);
-  makeStereo(root, wood);
-  makeBookshelf(root, wood, darkWood);
-  const fanBlades = makeFan(root);
-  makeTelevision(root, wood);
-  const fridge = makeFridge(root);
-  makeWallDecor(root, wood);
-  makeTelephone(root);
-  makeLowTable(root, wood);
-  makeCeilingLamp(root);
-  return {
-    root,
-    fridge,
-    animate(time, motion) {
-      fanBlades.rotation.z = motion ? time * 4 : 0;
-    },
+  const m = {
+    chest: tileMaterial(atlas, 0, 0x44241b), stereo: tileMaterial(atlas, 1, 0x9c9d93),
+    speaker: tileMaterial(atlas, 2, 0x38332d), bag: tileMaterial(atlas, 3, 0x982e49),
+    poster: tileMaterial(atlas, 4, 0x234566), print: tileMaterial(atlas, 5, 0xb9a677),
+    pennant: tileMaterial(atlas, 6, 0x9b6431), enamel: tileMaterial(atlas, 7, 0xbec2b6),
+    window: tileMaterial(atlas, 11, 0x88a9ae), wood: surface(0x795033),
   };
+  const wall = tileMaterial(atlas, 8, 0xb6aa8b, 12, 5);
+  const straw = tileMaterial(atlas, 9, 0xaa9972, 12, 12);
+  makeShell(root, wall, m.wood, tileMaterial(atlas, 10, 0x51362a, 8, 6), straw);
+  const entrance = makeSideWalls(root, m);
+  makeBackFurniture(root, m);
+  makeTelevision(root, m.wood);
+  makeWallArt(root, m);
+  makeBasket(root);
+  const fridge = makeFridge(root, m.enamel);
+  return { root, fridge, entrance };
 }

@@ -1,9 +1,14 @@
 import * as THREE from "three";
 import { createWrappedGift } from "./gift.js";
+import { createSakeDelivery, SAKE_PHASES } from "./sake-delivery.js";
 import { createGiftSequence, sampleGiftSequence } from "./gift-sequence.js";
 
 export function createGiftScene(toro, room, onPhaseChange) {
-  const sequence = createGiftSequence(onPhaseChange);
+  const delivery = createSakeDelivery(toro, room);
+  const sequence = createGiftSequence((phase) => {
+    if (phase === "stand_at_center") delivery.hide();
+    onPhaseChange?.(phase);
+  });
   const gift = createWrappedGift();
   gift.root.position.copy(room.fridge.giftPosition);
   room.root.add(gift.root);
@@ -17,9 +22,12 @@ export function createGiftScene(toro, room, onPhaseChange) {
   const pointer = new THREE.Vector2();
   const cameraPosition = new THREE.Vector3();
   const cameraTarget = new THREE.Vector3();
+  const widePosition = new THREE.Vector3(0, 3.0, 12);
+  const wideTarget = new THREE.Vector3(0, 2.05, 1.2);
   const cameraMatrix = new THREE.Matrix4();
   const cameraRotation = new THREE.Quaternion();
-  let frame = sampleGiftSequence("after_pet", 0);
+  let frame = sampleGiftSequence("turn_to_fridge", 0);
+  let expression;
 
   return {
     get active() {
@@ -27,6 +35,12 @@ export function createGiftScene(toro, room, onPhaseChange) {
     },
     get phase() {
       return sequence.phase;
+    },
+    get danceExpression() {
+      return sequence.phase === "dancing" ? expression : undefined;
+    },
+    get expression() {
+      return expression;
     },
     start() {
       return sequence.start();
@@ -36,6 +50,12 @@ export function createGiftScene(toro, room, onPhaseChange) {
     },
     open() {
       return sequence.openPresent();
+    },
+    startDance() {
+      return sequence.startDance();
+    },
+    startSakeDelivery() {
+      return sequence.startSakeDelivery();
     },
     openAt(event, canvas, camera) {
       if (sequence.phase !== "presenting") return false;
@@ -52,14 +72,19 @@ export function createGiftScene(toro, room, onPhaseChange) {
     },
     animate(delta, time, motion = true) {
       sequence.update(delta, !motion);
+      if (Object.hasOwn(SAKE_PHASES, sequence.phase)) {
+        expression = delivery.animate(sequence.phase, sequence.progress, time, motion);
+        return 0;
+      }
       frame = sampleGiftSequence(sequence.phase, sequence.progress);
-      toro.animate(
+      expression = toro.animate(
         time,
-        frame.walking ? "walk" : "stand",
+        sequence.phase === "dancing" ? "dance" : frame.walking ? "walk" : "stand",
         motion,
         1,
         frame.cameraProgress,
         frame.locomotion,
+        sequence.progress,
       );
       toro.root.position.x += frame.position.x;
       toro.root.position.z = frame.position.z;
@@ -79,15 +104,18 @@ export function createGiftScene(toro, room, onPhaseChange) {
       carryRotation.setFromAxisAngle(up, toro.root.rotation.y + Math.PI);
       gift.root.position
         .copy(room.fridge.giftPosition)
-        .lerp(carryPosition, frame.giftTransfer);
+        .lerp(carryPosition, frame.giftTransfer)
+        .lerp(room.fridge.giftPosition, frame.setDown);
       gift.root.quaternion
         .copy(originalRotation)
-        .slerp(carryRotation, frame.giftTransfer);
+        .slerp(carryRotation, frame.giftTransfer)
+        .slerp(originalRotation, frame.setDown);
       gift.root.updateMatrixWorld(true);
       gift.reveal(frame.reveal);
       if (frame.handleReach > 0) {
         room.fridge.getHandlePosition(rightTarget);
-        toro.hands.R.solve(rightTarget, frame.handleReach);
+        const hand = sequence.phase === "close_fridge" ? toro.hands.L : toro.hands.R;
+        hand.solve(rightTarget, frame.handleReach);
       }
       if (frame.giftReach > 0) {
         leftTarget.copy(gift.leftGrip).applyMatrix4(gift.root.matrixWorld);
@@ -98,9 +126,14 @@ export function createGiftScene(toro, room, onPhaseChange) {
       return frame.cameraProgress;
     },
     frameCamera(camera, width, height, panelHeight) {
-      if (frame.giftCamera <= 0) return;
+      if (Object.hasOwn(SAKE_PHASES, sequence.phase)) {
+        delivery.frameCamera(camera, width, height);
+        return;
+      }
+      const blend = frame.giftCamera + frame.wideCamera;
+      if (blend <= 0) return;
       const availableHeight = Math.max(160, height - panelHeight - 12);
-      const fov =
+      const closeFov =
         2 *
         Math.atan(
           (Math.tan(THREE.MathUtils.degToRad(25 + frame.reveal * 2.5)) *
@@ -113,15 +146,28 @@ export function createGiftScene(toro, room, onPhaseChange) {
         4.15 + frame.reveal * 0.35,
       );
       cameraTarget.set(0, 2.28 + frame.reveal * 0.3, 1.9);
+      const wideHeight = THREE.MathUtils.lerp(5.55, 3.8, frame.fridgeFocus);
+      const wideFov = 2 * Math.atan(Math.max(wideHeight, 6.2 / camera.aspect) / 10.7);
+      const fov = THREE.MathUtils.lerp(closeFov, wideFov, frame.wideCamera);
+      cameraPosition.lerp(widePosition, frame.wideCamera);
+      cameraTarget.lerp(wideTarget, frame.wideCamera);
+      // Watch from the open side so Toro's head doesn't hide the cake as it goes in.
+      const fridge = room.fridge.root.position;
+      cameraPosition.x += fridge.x * 0.28 * frame.fridgeFocus;
+      cameraPosition.z -= 3.5 * frame.fridgeFocus;
+      cameraTarget.x += fridge.x * frame.fridgeFocus;
+      cameraTarget.z += (fridge.z + 0.7 - wideTarget.z) * frame.fridgeFocus;
       cameraMatrix.lookAt(cameraPosition, cameraTarget, up);
       cameraRotation.setFromRotationMatrix(cameraMatrix);
-      camera.position.lerp(cameraPosition, frame.giftCamera);
-      camera.quaternion.slerp(cameraRotation, frame.giftCamera);
+      camera.position.lerp(cameraPosition, blend);
+      camera.quaternion.slerp(cameraRotation, blend);
       camera.fov = THREE.MathUtils.lerp(
         camera.fov,
         THREE.MathUtils.radToDeg(fov),
-        frame.giftCamera,
+        blend,
       );
+      const offsetY = THREE.MathUtils.lerp(camera.view.offsetY, (1 - frame.wideCamera) * panelHeight / 2, blend);
+      camera.setViewOffset(width, height, 0, offsetY, width, height);
       camera.updateProjectionMatrix();
     },
   };
