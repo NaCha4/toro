@@ -11,6 +11,7 @@ const types = {
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".glb": "model/gltf-binary",
+  ".webmanifest": "application/manifest+json",
 };
 const port = Number(process.env.PORT || 4173);
 http

@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { loadToro, expressions } from "./toro.js";
 import { createRoom } from "./room.js";
+import { setupDisplayMode } from "./display.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
@@ -15,6 +16,7 @@ const loading = document.querySelector("#loading");
 const controlsPanel = document.querySelector(".controls");
 const state = { expression: "normal", pose: "stand" };
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+setupDisplayMode();
 
 function selectButton(attribute, value) {
   document.querySelectorAll(`[data-${attribute}]`).forEach((button) => {
@@ -98,12 +100,16 @@ async function startViewer() {
   composer.addPass(new OutputPass());
 
   function resize() {
-    const { width, height } = viewport.getBoundingClientRect();
+    const width = viewport.clientWidth;
+    const height = viewport.clientHeight;
     camera.aspect = width / height;
-    const panelHeight = controlsPanel.getBoundingClientRect().height + 38;
-    const availableHeight = Math.max(220, height - panelHeight - 30);
+    const panelBounds = controlsPanel.getBoundingClientRect();
+    const panelHeight =
+      height - panelBounds.top + viewport.getBoundingClientRect().top;
+    const shortLandscape = width > height && height <= 500;
+    const availableHeight = Math.max(160, height - panelHeight - 12);
     const halfHeight = Math.max(
-      (3.7 * height) / availableHeight,
+      ((shortLandscape ? 3.1 : 3.7) * height) / availableHeight,
       3.6 / camera.aspect,
     );
     camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(halfHeight / 13.1));
@@ -114,6 +120,7 @@ async function startViewer() {
   }
   new ResizeObserver(resize).observe(viewport);
   new ResizeObserver(resize).observe(controlsPanel);
+  window.visualViewport?.addEventListener("resize", resize);
   resize();
 
   const toro = await loadToro();
