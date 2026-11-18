@@ -4,9 +4,13 @@ export function setupDisplayMode() {
   const help = document.querySelector("#display-help");
   const message = document.querySelector("#display-help-message");
   const steps = document.querySelector("#display-help-steps");
+  const gate = document.querySelector("#display-gate");
+  const viewport = document.querySelector("#viewport");
+  const controls = document.querySelector(".controls");
   const landscape = matchMedia("(orientation: landscape)");
   const fullscreenDisplay = matchMedia("(display-mode: fullscreen)");
   const standaloneDisplay = matchMedia("(display-mode: standalone)");
+  const touchMobile = matchMedia("(hover: none) and (pointer: coarse)");
   const appleMobile =
     /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -23,9 +27,35 @@ export function setupDisplayMode() {
   }
 
   function update() {
-    button.hidden = isFullscreen() && landscape.matches;
+    const fullscreen = isFullscreen();
+    const landscapeFullscreen = fullscreen && landscape.matches;
+    const mobile =
+      appleMobile ||
+      navigator.userAgentData?.mobile ||
+      /Android|Mobile/i.test(navigator.userAgent) ||
+      touchMobile.matches;
+    const blocked = Boolean(mobile && !landscapeFullscreen);
+    button.hidden = landscapeFullscreen;
     button.disabled = pending;
-    document.documentElement.dataset.displayMode = isFullscreen()
+    document.documentElement.dataset.viewerState = blocked
+      ? "blocked"
+      : "ready";
+    gate.hidden = !blocked;
+    gate.textContent = fullscreen
+      ? "기기를 가로로 돌려 주세요."
+      : "가로 전체화면으로 열어 주세요.";
+    for (const element of [viewport, controls]) {
+      element.inert = blocked;
+      element.setAttribute("aria-hidden", String(blocked));
+    }
+    if (
+      blocked &&
+      (viewport.contains(document.activeElement) ||
+        controls.contains(document.activeElement))
+    ) {
+      button.focus({ preventScroll: true });
+    }
+    document.documentElement.dataset.displayMode = fullscreen
       ? "fullscreen"
       : "browser";
     document.documentElement.dataset.orientation = landscape.matches
@@ -90,5 +120,6 @@ export function setupDisplayMode() {
   landscape.addEventListener("change", update);
   fullscreenDisplay.addEventListener("change", update);
   standaloneDisplay.addEventListener("change", update);
+  touchMobile.addEventListener("change", update);
   update();
 }

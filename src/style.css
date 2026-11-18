@@ -105,6 +105,37 @@ canvas:focus-visible {
 .fullscreen-button[hidden] {
   display: none;
 }
+html:not([data-viewer-state="ready"]) #viewport,
+html:not([data-viewer-state="ready"]) .controls,
+html:not([data-viewer-state="ready"]) #loading {
+  visibility: hidden;
+  pointer-events: none;
+}
+html[data-viewer-state="pending"] .fullscreen-button {
+  visibility: hidden;
+}
+html[data-viewer-state="blocked"] #viewer {
+  background: #20241e;
+}
+html[data-viewer-state="blocked"] .fullscreen-button {
+  top: 50%;
+  left: 50%;
+  right: auto;
+  transform: translate(-50%, -50%);
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 14px;
+}
+#display-gate {
+  position: absolute;
+  top: calc(50% - 68px);
+  left: 16px;
+  right: 16px;
+  margin: 0;
+  color: #edf0e5;
+  font-size: 14px;
+  text-align: center;
+}
 #display-help {
   max-width: min(370px, calc(100% - 40px));
   padding: 22px;

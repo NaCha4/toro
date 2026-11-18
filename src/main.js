@@ -199,6 +199,7 @@ async function startViewer() {
   const timer = new THREE.Timer();
   timer.connect(document);
   renderer.setAnimationLoop(() => {
+    if (document.documentElement.dataset.viewerState !== "ready") return;
     timer.update();
     toro.animate(timer.getElapsed(), state.pose, !reducedMotion.matches);
     room.animate(timer.getElapsed(), !reducedMotion.matches);
