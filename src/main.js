@@ -2,6 +2,12 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { loadToro, expressions } from "./toro.js";
+import { createRoom } from "./room.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RectAreaLightUniformsLib } from "three/addons/lights/RectAreaLightUniformsLib.js";
 import "./style.css";
 
 const viewport = document.querySelector("#viewport");
@@ -21,7 +27,9 @@ function selectButton(attribute, value) {
 async function startViewer() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.setClearColor(0xf5f5f3);
+  renderer.setClearColor(0xe8e3d7);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.VSMShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.85;
@@ -29,36 +37,65 @@ async function startViewer() {
   renderer.domElement.setAttribute("role", "img");
   renderer.domElement.setAttribute(
     "aria-label",
-    "토로 3D 모델. 드래그 또는 방향키로 회전, 스크롤로 확대, R 키로 시점 초기화.",
+    "다다미 방 안에 서 있는 토로. 드래그 또는 방향키로 둘러보기, 스크롤로 확대, R 키로 시점 초기화.",
   );
   viewport.append(renderer.domElement);
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const room = new RoomEnvironment();
-  const environment = pmrem.fromScene(room, 0.04);
+  const studio = new RoomEnvironment();
+  const environment = pmrem.fromScene(studio, 0.04);
   scene.environment = environment.texture;
-  scene.environmentIntensity = 0.65;
-  room.dispose();
+  scene.environmentIntensity = 0.22;
+  studio.dispose();
   pmrem.dispose();
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xb8b8b3, 1.5));
-  const key = new THREE.DirectionalLight(0xffffff, 2.2);
-  key.position.set(-3, 5, 7);
+  scene.add(new THREE.HemisphereLight(0xfff0d5, 0x817759, 0.75));
+  const key = new THREE.SpotLight(0xffedca, 90, 25, 1.3, 0.85, 2);
+  key.position.set(0, 5.88, 0.1);
+  key.target.position.set(0, 0, 0.1);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.radius = 6;
+  key.shadow.blurSamples = 8;
+  key.shadow.camera.near = 0.1;
+  key.shadow.camera.far = 35;
+  key.shadow.normalBias = 0.02;
+  key.shadow.bias = -0.0001;
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0xffffff, 1);
-  fill.position.set(4, 2, -3);
-  scene.add(fill);
+  scene.add(key.target);
+  RectAreaLightUniformsLib.init();
+  const windowLight = new THREE.RectAreaLight(0xe7eddf, 2.6, 3.65, 2.9);
+  windowLight.position.set(-5.98, 4.15, -0.25);
+  windowLight.lookAt(0, 3, -0.25);
+  scene.add(windowLight);
 
-  const camera = new THREE.PerspectiveCamera(31, 1, 0.1, 100);
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
   const orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true;
   orbit.enablePan = false;
-  orbit.minDistance = 4;
-  orbit.maxDistance = 20;
-  orbit.target.set(0, 2.2, 0);
-  camera.position.set(0.6, 2.65, 10.5);
+  orbit.minDistance = 9;
+  orbit.maxDistance = 15;
+  orbit.minPolarAngle = 1.2;
+  orbit.maxPolarAngle = 1.52;
+  orbit.minAzimuthAngle = -0.2;
+  orbit.maxAzimuthAngle = 0.33;
+  orbit.target.set(0, 2.5, -0.7);
+  camera.position.set(2.6, 4.1, 12.0);
   orbit.update();
   orbit.saveState();
+  const target = new THREE.WebGLRenderTarget(1, 1, {
+    type: THREE.HalfFloatType,
+    samples: 4,
+  });
+  const composer = new EffectComposer(renderer, target);
+  composer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+  const ambientOcclusion = new SSAOPass(scene, camera, 1, 1, 16);
+  ambientOcclusion.kernelRadius = 0.42;
+  ambientOcclusion.minDistance = 0.001;
+  ambientOcclusion.maxDistance = 0.06;
+  composer.addPass(new RenderPass(scene, camera));
+  composer.addPass(ambientOcclusion);
+  composer.addPass(new OutputPass());
 
   function resize() {
     const { width, height } = viewport.getBoundingClientRect();
@@ -66,20 +103,25 @@ async function startViewer() {
     const panelHeight = controlsPanel.getBoundingClientRect().height + 38;
     const availableHeight = Math.max(220, height - panelHeight - 30);
     const halfHeight = Math.max(
-      (2.4 * height) / availableHeight,
-      1.9 / camera.aspect,
+      (3.7 * height) / availableHeight,
+      3.6 / camera.aspect,
     );
-    camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(halfHeight / 10.5));
+    camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(halfHeight / 13.1));
     camera.setViewOffset(width, height, 0, panelHeight / 2, width, height);
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
+    composer.setSize(width, height);
   }
   new ResizeObserver(resize).observe(viewport);
   new ResizeObserver(resize).observe(controlsPanel);
   resize();
 
   const toro = await loadToro();
+  toro.root.scale.multiplyScalar(0.91);
+  toro.root.position.z = 0.9;
   scene.add(toro.root);
+  const room = createRoom();
+  scene.add(room.root);
   const expressionControls = document.querySelector("#expression-controls");
   for (const expression of expressions) {
     const button = document.createElement("button");
@@ -128,8 +170,13 @@ async function startViewer() {
     spherical.theta += increments[event.key][0];
     spherical.phi = THREE.MathUtils.clamp(
       spherical.phi + increments[event.key][1],
-      0.1,
-      Math.PI - 0.1,
+      orbit.minPolarAngle,
+      orbit.maxPolarAngle,
+    );
+    spherical.theta = THREE.MathUtils.clamp(
+      spherical.theta,
+      orbit.minAzimuthAngle,
+      orbit.maxAzimuthAngle,
     );
     camera.position
       .copy(orbit.target)
@@ -147,8 +194,9 @@ async function startViewer() {
   renderer.setAnimationLoop(() => {
     timer.update();
     toro.animate(timer.getElapsed(), state.pose, !reducedMotion.matches);
+    room.animate(timer.getElapsed(), !reducedMotion.matches);
     orbit.update();
-    renderer.render(scene, camera);
+    composer.render();
   });
   loading.hidden = true;
   document.documentElement.dataset.studioReady = "true";
