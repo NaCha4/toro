@@ -527,14 +527,61 @@ function makeFridge(parent) {
   fridge.position.set(4.82, 0, -3.67);
   parent.add(fridge);
   const enamel = surface(0xe5e4cf);
+  const liner = surface(0xf6f2df);
   box(
     fridge,
-    "Small refrigerator",
-    [1.7, 3.38, 1.5],
-    [0, 1.75, 0],
+    "Refrigerator back",
+    [1.7, 3.38, 0.12],
+    [0, 1.75, -0.69],
     enamel,
-    0.075,
+    0.04,
   );
+  for (const x of [-0.8, 0.8])
+    box(
+      fridge,
+      "Refrigerator side",
+      [0.1, 3.38, 1.5],
+      [x, 1.75, 0],
+      enamel,
+      0.04,
+    );
+  box(
+    fridge,
+    "Refrigerator base",
+    [1.6, 0.14, 1.5],
+    [0, 0.13, 0],
+    enamel,
+    0.025,
+  );
+  box(
+    fridge,
+    "Refrigerator upper cabinet",
+    [1.6, 1.04, 1.5],
+    [0, 2.92, 0],
+    enamel,
+    0.04,
+  );
+  box(
+    fridge,
+    "Cream refrigerator liner",
+    [1.48, 2.15, 0.035],
+    [0, 1.34, -0.6],
+    liner,
+    0.012,
+  );
+  for (const y of [0.23, 1.08, 2.2])
+    box(
+      fridge,
+      "Interior shelf",
+      [1.42, 0.055, 1.24],
+      [0, y, 0.03],
+      liner,
+      0.014,
+    );
+  const door = new THREE.Group();
+  door.name = "Hinged refrigerator door";
+  door.position.set(0.795, 0, 0.79);
+  fridge.add(door);
   box(
     fridge,
     "Freezer door",
@@ -544,22 +591,37 @@ function makeFridge(parent) {
     0.035,
   );
   box(
-    fridge,
+    door,
     "Fridge door",
     [1.59, 2.14, 0.095],
-    [0, 1.33, 0.79],
+    [-0.795, 1.33, 0],
     enamel,
     0.04,
   );
-  for (const y of [2.67, 2.0])
-    box(
-      fridge,
-      "Refrigerator handle",
-      [0.34, 0.055, 0.07],
-      [-0.44, y, 0.9],
-      surface(0xb7b9a6),
-      0.02,
-    );
+  box(
+    door,
+    "Inner door liner",
+    [1.43, 1.98, 0.04],
+    [-0.795, 1.33, -0.065],
+    liner,
+    0.025,
+  );
+  box(
+    fridge,
+    "Freezer handle",
+    [0.34, 0.055, 0.07],
+    [-0.44, 2.67, 0.9],
+    surface(0xb7b9a6),
+    0.02,
+  );
+  const handle = box(
+    door,
+    "Refrigerator handle",
+    [0.34, 0.055, 0.07],
+    [-1.235, 2, 0.11],
+    surface(0xb7b9a6),
+    0.02,
+  );
   const note = texture(96, 128, (ctx, width, height) => {
     ctx.fillStyle = "#e8d5a0";
     ctx.fillRect(0, 0, width, height);
@@ -570,11 +632,11 @@ function makeFridge(parent) {
     ctx.fillText("つ", 35, 91);
   });
   const sticker = panel(
-    fridge,
+    door,
     "Paper note",
     0.33,
     0.43,
-    [-0.39, 1.24, 0.853],
+    [-1.185, 1.24, 0.063],
     note,
   );
   sticker.rotation.z = -0.08;
@@ -587,6 +649,21 @@ function makeFridge(parent) {
     [0.3, 3.64, 0.14],
     surface(0x67745a),
   );
+  const light = new THREE.PointLight(0xffedca, 0, 2.4, 2);
+  light.position.set(0, 2.2, 0.38);
+  fridge.add(light);
+  return {
+    root: fridge,
+    giftPosition: new THREE.Vector3(4.72, 1.43, -3.36),
+    setOpen(amount) {
+      door.rotation.y = amount * 1.8;
+      light.intensity = amount * 3;
+      door.updateWorldMatrix(true, true);
+    },
+    getHandlePosition(target) {
+      return handle.getWorldPosition(target);
+    },
+  };
 }
 
 function makeWallDecor(parent, wood) {
@@ -1042,13 +1119,14 @@ export function createRoom() {
   makeBookshelf(root, wood, darkWood);
   const fanBlades = makeFan(root);
   makeTelevision(root, wood);
-  makeFridge(root);
+  const fridge = makeFridge(root);
   makeWallDecor(root, wood);
   makeTelephone(root);
   makeLowTable(root, wood);
   makeCeilingLamp(root);
   return {
     root,
+    fridge,
     animate(time, motion) {
       fanBlades.rotation.z = motion ? time * 4 : 0;
     },

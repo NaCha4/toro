@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { createGreetingMotion } from "./greeting-motion.js";
 import { addWrist } from "./wrist.js";
+import { createArmIK } from "./arm-ik.js";
 
 export const expressions = [
   { number: 1, id: "normal", label: "방긋", tile: 0 },
@@ -91,6 +92,7 @@ export async function loadToro() {
     rightCalf: captureJoint("R_Calf"),
   };
   const bodyJoints = Object.values(body);
+  const hands = { L: createArmIK(root, "L"), R: createArmIK(root, "R") };
   const footPoint = new THREE.Vector3();
   const feet = ["toro_lleg", "toro_rleg"].map((name) => {
     const mesh = root.getObjectByName(name);
@@ -153,6 +155,7 @@ export async function loadToro() {
     motion = true,
     poseBlend = 1,
     approachProgress = 0,
+    locomotion = null,
   ) {
     if (pose !== previousPose) {
       previousPose = pose;
@@ -160,10 +163,11 @@ export async function loadToro() {
     }
     const sway = motion ? Math.sin(time * 1.8) : 0;
     const greeting = sampleGreeting(time - poseStartedAt, motion, poseBlend);
-    const stepPhase = approachProgress * Math.PI * 16;
+    const stepPhase = locomotion?.phase ?? approachProgress * Math.PI * 16;
     const walkBlend = motion
-      ? THREE.MathUtils.smoothstep(approachProgress, 0, 0.06) *
-        (1 - THREE.MathUtils.smoothstep(approachProgress, 0.91, 1))
+      ? (locomotion?.blend ??
+        THREE.MathUtils.smoothstep(approachProgress, 0, 0.06) *
+          (1 - THREE.MathUtils.smoothstep(approachProgress, 0.91, 1)))
       : 0;
     const stride = Math.sin(stepPhase) * walkBlend;
     root.rotation.y = pose === "dance" ? sway * 0.1 : 0;
@@ -306,11 +310,18 @@ export async function loadToro() {
     rotateJoint(body.head, y * 0.17 + pressure * 0.04, x * 0.23, -x * 0.21);
   }
 
+  function applyActing(lean = 0, headPitch = 0) {
+    rotateJoint(body.spine, lean, 0, 0);
+    rotateJoint(body.head, headPitch, 0, 0);
+  }
+
   return {
     root,
     head: root.getObjectByName("toro_head"),
     setExpression,
     animate,
     applyPetting,
+    applyActing,
+    hands,
   };
 }

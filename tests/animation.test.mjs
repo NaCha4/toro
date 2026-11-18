@@ -3,19 +3,24 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { loadImage } from "@napi-rs/canvas";
+import { loadImage, createCanvas } from "@napi-rs/canvas";
 import { addWrist } from "../src/wrist.js";
 import { loadToro } from "../src/toro.js";
 import { createGreetingSequence } from "../src/greeting.js";
 import { START_TORO_Z, CLOSEUP_TORO_Z } from "../src/greeting.js";
 import { updateCameraFraming } from "../src/camera-framing.js";
+import { createRoom } from "../src/room.js";
+import { createGiftScene } from "../src/gift-scene.js";
 import {
   createGreetingMotion,
   GREETING_DURATION,
 } from "../src/greeting-motion.js";
 
 globalThis.self = globalThis;
-globalThis.document = { baseURI: "https://nacha4.github.io/toro/" };
+globalThis.document = {
+  baseURI: "https://nacha4.github.io/toro/",
+  createElement: () => createCanvas(1, 1),
+};
 globalThis.createImageBitmap = async (blob) =>
   loadImage(Buffer.from(await blob.arrayBuffer()));
 globalThis.ProgressEvent = class {
@@ -185,6 +190,67 @@ test("head petting follows the stroke without moving the legs or model root", as
   worldVertices(toro.head).forEach((point, index) =>
     assert.ok(point.distanceTo(baseline[index]) < 1e-8),
   );
+});
+
+test("the present stays inside the closed fridge and follows both paws after pickup", async () => {
+  const toro = await loadTestToro();
+  toro.root.scale.multiplyScalar(0.91);
+  const room = createRoom();
+  const scene = new THREE.Scene();
+  scene.add(toro.root, room.root);
+  const story = createGiftScene(toro, room, () => {});
+  scene.updateMatrixWorld(true);
+  const present = room.root.getObjectByName("Ribbon wrapped present");
+  const bounds = new THREE.Box3().setFromObject(present);
+  assert.ok(bounds.max.z < -2.927);
+  story.start();
+  let worstGripError = 0;
+  for (let frame = 0; frame < 660; frame++) {
+    story.animate(1 / 30, frame / 30);
+    assert.ok(toro.root.position.toArray().every(Number.isFinite));
+    if (
+      [
+        "take_gift",
+        "turn_with_gift",
+        "return_with_gift",
+        "offer_gift",
+        "presenting",
+      ].includes(story.phase)
+    ) {
+      for (const [side, x] of [
+        ["L", -0.47],
+        ["R", 0.47],
+      ]) {
+        const expected = new THREE.Vector3(x, 0.03, 0.19).applyMatrix4(
+          present.matrixWorld,
+        );
+        const actual = toro.hands[side].getPosition(new THREE.Vector3());
+        worstGripError = Math.max(worstGripError, expected.distanceTo(actual));
+      }
+    }
+  }
+  assert.equal(story.phase, "presenting");
+  assert.ok(worstGripError < 0.06, `Paw grip error ${worstGripError}`);
+  assert.equal(story.open(), true);
+  assert.equal(story.open(), false);
+  story.animate(1.5, 24);
+  assert.equal(story.phase, "celebrating");
+  const card = room.root.getObjectByName("수능 응원카드").children[0];
+  for (const [width, height, panelHeight] of [
+    [812, 375, 0],
+    [1440, 760, 180],
+  ]) {
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    updateCameraFraming(camera, width, height, panelHeight, 0);
+    story.frameCamera(camera, width, height, panelHeight);
+    camera.updateMatrixWorld(true);
+    scene.updateMatrixWorld(true);
+    for (const point of worldVertices(card)) {
+      point.project(camera);
+      assert.ok(point.x > -1 && point.x < 1);
+      assert.ok(point.y < 1 && point.y > -1 + (panelHeight / height) * 2);
+    }
+  }
 });
 
 test("motion curves overlap, loop smoothly and respect reduced motion", () => {

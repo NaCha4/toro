@@ -10,6 +10,7 @@ import {
 } from "./greeting.js";
 import { updateCameraFraming } from "./camera-framing.js";
 import { createPettingMotion, bindHeadPetting } from "./petting.js";
+import { createGiftScene } from "./gift-scene.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
@@ -119,6 +120,42 @@ async function startViewer() {
   scene.add(toro.root);
   const room = createRoom();
   scene.add(room.root);
+  const giftScene = createGiftScene(toro, room, (phase) => {
+    petting.setEnabled(false);
+    state.expression =
+      phase === "after_pet"
+        ? "laugh"
+        : [
+              "offer_gift",
+              "gift_closeup",
+              "presenting",
+              "gift_burst",
+              "celebrating",
+            ].includes(phase)
+          ? "delighted"
+          : "normal";
+    state.pose = "stand";
+    toro.setExpression(state.expression);
+    selectButton("expression", state.expression);
+    selectButton("pose", state.pose);
+    previewButtons.forEach((button) => {
+      button.disabled = true;
+    });
+    viewer.dataset.inputLocked = "true";
+    viewer.dataset.giftState = phase;
+    renderer.domElement.setAttribute(
+      "role",
+      phase === "presenting" ? "button" : "img",
+    );
+    renderer.domElement.setAttribute(
+      "aria-label",
+      phase === "presenting"
+        ? "리본 선물상자를 터치해서 열어 주세요"
+        : phase === "celebrating"
+          ? "수능 케이크와 응원카드를 선물하는 토로"
+          : "냉장고에서 선물을 꺼내는 토로",
+    );
+  });
   const expressionControls = document.querySelector("#expression-controls");
   for (const expression of expressions) {
     const button = document.createElement("button");
@@ -142,6 +179,7 @@ async function startViewer() {
     number.setAttribute("aria-hidden", "true");
     button.append(preview, number);
     button.addEventListener("click", () => {
+      if (giftScene.active) return;
       petting.cancel();
       state.expression = expression.id;
       toro.setExpression(state.expression);
@@ -153,6 +191,7 @@ async function startViewer() {
   document.querySelectorAll("[data-pose]").forEach((button) => {
     button.disabled = true;
     button.addEventListener("click", () => {
+      if (giftScene.active) return;
       petting.cancel();
       state.pose = button.dataset.pose;
       selectButton("pose", state.pose);
@@ -211,7 +250,12 @@ async function startViewer() {
   }
 
   renderer.domElement.addEventListener("pointerdown", (event) => {
-    if (event.isPrimary !== false && event.button === 0) beginGreeting();
+    if (event.isPrimary === false || event.button !== 0) return;
+    if (giftScene.active) {
+      giftScene.openAt(event, renderer.domElement, camera);
+      return;
+    }
+    beginGreeting();
   });
   bindHeadPetting({
     canvas: renderer.domElement,
@@ -220,6 +264,7 @@ async function startViewer() {
     motion: petting,
     canInteract: () =>
       greeting.phase === "closeup" &&
+      !giftScene.active &&
       document.documentElement.dataset.viewerState === "ready" &&
       !document.hidden,
     onStroke: () => {
@@ -229,12 +274,14 @@ async function startViewer() {
       selectButton("expression", state.expression);
       selectButton("pose", state.pose);
     },
+    onComplete: () => giftScene.start(),
   });
   hint.addEventListener("click", beginGreeting);
   renderer.domElement.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      beginGreeting();
+      if (giftScene.canOpen) giftScene.open();
+      else beginGreeting();
     }
   });
   renderer.domElement.addEventListener("webglcontextlost", (event) => {
@@ -262,22 +309,30 @@ async function startViewer() {
     hint.hidden = !greeting.hintVisible;
     petHint.hidden = !petting.hintVisible;
     viewer.dataset.pettingState = petting.rubbing ? "rubbing" : "idle";
-    toro.animate(
-      activeTime,
-      state.pose,
-      !reducedMotion.matches,
-      greeting.phase === "greeting" && !reducedMotion.matches
-        ? greeting.waveBlend
-        : 1,
-      closeupProgress,
-    );
+    if (giftScene.active) {
+      closeupProgress = giftScene.animate(
+        delta,
+        activeTime,
+        !reducedMotion.matches,
+      );
+    } else {
+      toro.animate(
+        activeTime,
+        state.pose,
+        !reducedMotion.matches,
+        greeting.phase === "greeting" && !reducedMotion.matches
+          ? greeting.waveBlend
+          : 1,
+        closeupProgress,
+      );
+      toro.root.position.z = THREE.MathUtils.lerp(
+        START_TORO_Z,
+        CLOSEUP_TORO_Z,
+        closeupProgress,
+      );
+      toro.root.rotation.y += greeting.heading;
+    }
     toro.applyPetting(petting.pose, reducedMotion.matches ? 0.55 : 1);
-    toro.root.position.z = THREE.MathUtils.lerp(
-      START_TORO_Z,
-      CLOSEUP_TORO_Z,
-      closeupProgress,
-    );
-    toro.root.rotation.y += greeting.heading;
     updateCameraFraming(
       camera,
       viewport.clientWidth,
@@ -285,6 +340,13 @@ async function startViewer() {
       panelHeight,
       closeupProgress,
     );
+    if (giftScene.active)
+      giftScene.frameCamera(
+        camera,
+        viewport.clientWidth,
+        viewport.clientHeight,
+        panelHeight,
+      );
     room.animate(activeTime, !reducedMotion.matches);
     composer.render();
   });

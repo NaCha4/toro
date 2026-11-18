@@ -45,6 +45,12 @@ canvas {
 #viewer[data-petting-state="rubbing"] canvas {
   cursor: grabbing;
 }
+#viewer[data-input-locked="true"] canvas {
+  cursor: default;
+}
+#viewer[data-gift-state="presenting"] canvas {
+  cursor: pointer;
+}
 button {
   font: inherit;
   color: inherit;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPettingMotion } from "../src/petting.js";
+import * as THREE from "three";
+import { createPettingMotion, bindHeadPetting } from "../src/petting.js";
 
 test("the petting guide waits for an idle closeup", () => {
   const motion = createPettingMotion();
@@ -94,4 +95,121 @@ test("the head follows a reversal at the limit and settles with a small rebound"
   assert.ok(rebound.some((value) => value < -0.001));
   assert.ok(rebound.every((value) => Math.abs(value) < 1.15));
   assert.ok(Math.abs(motion.pose.x) < 0.0001);
+});
+
+test("three seconds of movement qualifies only on release", () => {
+  const motion = createPettingMotion();
+  motion.setEnabled(true);
+  motion.begin(1, 100, 100, 400, 400);
+  for (let frame = 0; frame < 190; frame++) {
+    motion.move(1, 100 + Math.sin(frame * 0.2) * 60, 100);
+    motion.update(1 / 60);
+  }
+  assert.ok(motion.rubDuration >= 3);
+  assert.equal(motion.rubbing, true);
+  assert.equal(motion.end(1), true);
+  assert.equal(motion.end(1), false);
+});
+
+test("a short stroke, stationary hold or canceled stroke does not qualify", () => {
+  const motion = createPettingMotion();
+  motion.setEnabled(true);
+  motion.begin(1, 100, 100, 400, 400);
+  motion.move(1, 140, 100);
+  motion.update(4);
+  assert.ok(motion.rubDuration <= 0.2);
+  assert.equal(motion.end(1), false);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    motion.begin(1, 100, 100, 400, 400);
+    for (let frame = 0; frame < 110; frame++) {
+      motion.move(1, 100 + Math.sin(frame * 0.2) * 60, 100);
+      motion.update(1 / 60);
+    }
+    assert.equal(motion.end(1), false);
+  }
+  motion.begin(1, 100, 100, 400, 400);
+  for (let frame = 0; frame < 190; frame++) {
+    motion.move(1, 100 + Math.sin(frame * 0.2) * 60, 100);
+    motion.update(1 / 60);
+  }
+  motion.cancel();
+  assert.equal(motion.end(1), false);
+});
+
+test("a completed pointer stroke locks interaction once and cancellation never triggers a reward", () => {
+  const windowEvents = new EventTarget();
+  const documentEvents = new EventTarget();
+  globalThis.window = windowEvents;
+  globalThis.document = documentEvents;
+  const canvas = new EventTarget();
+  canvas.getBoundingClientRect = () => ({
+    left: 0,
+    top: 0,
+    width: 400,
+    height: 400,
+  });
+  canvas.setPointerCapture = () => {};
+  const geometry = new THREE.BoxGeometry(2, 2, 2);
+  const count = geometry.attributes.position.count;
+  const weights = new Float32Array(count * 4);
+  for (let index = 0; index < count; index++) weights[index * 4] = 1;
+  geometry.setAttribute(
+    "skinIndex",
+    new THREE.Uint16BufferAttribute(new Uint16Array(count * 4), 4),
+  );
+  geometry.setAttribute(
+    "skinWeight",
+    new THREE.Float32BufferAttribute(weights, 4),
+  );
+  const head = new THREE.SkinnedMesh(geometry, new THREE.MeshBasicMaterial());
+  const bone = new THREE.Bone();
+  head.add(bone);
+  head.bind(new THREE.Skeleton([bone]));
+  head.updateMatrixWorld(true);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 20);
+  camera.position.z = 5;
+  camera.updateMatrixWorld();
+  const motion = createPettingMotion();
+  motion.setEnabled(true);
+  let rewards = 0;
+  bindHeadPetting({
+    canvas,
+    head,
+    camera,
+    motion,
+    canInteract: () => motion.enabled,
+    onStroke() {},
+    onComplete() {
+      rewards++;
+      motion.setEnabled(false);
+    },
+  });
+  const dispatch = (target, type, x = 200) => {
+    const event = new Event(type, { cancelable: true });
+    Object.assign(event, {
+      pointerId: 1,
+      isPrimary: true,
+      button: 0,
+      clientX: x,
+      clientY: 200,
+    });
+    target.dispatchEvent(event);
+  };
+  const rub = () => {
+    dispatch(canvas, "pointerdown");
+    for (let frame = 0; frame < 190; frame++) {
+      dispatch(windowEvents, "pointermove", 225 + Math.sin(frame * 0.2) * 20);
+      motion.update(1 / 60);
+    }
+  };
+  rub();
+  dispatch(windowEvents, "pointerup");
+  dispatch(canvas, "lostpointercapture");
+  assert.equal(rewards, 1);
+  assert.equal(motion.enabled, false);
+  motion.setEnabled(true);
+  rub();
+  dispatch(windowEvents, "pointercancel");
+  dispatch(windowEvents, "pointerup");
+  assert.equal(rewards, 1);
 });
