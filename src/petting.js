@@ -4,12 +4,26 @@ const HINT_DELAY = 3;
 const DRAG_THRESHOLD = 5;
 
 function settle(axis, target, delta) {
-  const frequency = 14;
+  const frequency = 18;
+  const damping = 0.68;
+  const decayRate = frequency * damping;
+  const angularFrequency = frequency * Math.sqrt(1 - damping * damping);
   const offset = axis.value - target;
-  const step = (axis.velocity + frequency * offset) * delta;
-  const decay = Math.exp(-frequency * delta);
-  axis.value = target + (offset + step) * decay;
-  axis.velocity = (axis.velocity - frequency * step) * decay;
+  const velocity = axis.velocity;
+  const decay = Math.exp(-decayRate * delta);
+  const cosine = Math.cos(angularFrequency * delta);
+  const sine = Math.sin(angularFrequency * delta);
+  axis.value =
+    target +
+    decay *
+      (offset * cosine +
+        ((velocity + decayRate * offset) / angularFrequency) * sine);
+  axis.velocity =
+    decay *
+    (velocity * cosine -
+      ((decayRate * velocity + frequency * frequency * offset) /
+        angularFrequency) *
+        sine);
 }
 
 export function createPettingMotion() {
@@ -64,10 +78,10 @@ export function createPettingMotion() {
         id,
         x,
         y,
+        startX: x,
+        startY: y,
         width: Math.max(width, 1),
         height: Math.max(height, 1),
-        baseX: axes.x.value,
-        baseY: axes.y.value,
       };
       target.x = axes.x.value;
       target.y = axes.y.value;
@@ -77,21 +91,27 @@ export function createPettingMotion() {
       if (!contact || contact.id !== id) return false;
       const dx = x - contact.x;
       const dy = y - contact.y;
-      if (!rubbing && Math.hypot(dx, dy) < DRAG_THRESHOLD) return false;
+      if (
+        !rubbing &&
+        Math.hypot(x - contact.startX, y - contact.startY) < DRAG_THRESHOLD
+      )
+        return false;
       const started = !rubbing;
       rubbing = true;
       idleTime = 0;
       target.x = THREE.MathUtils.clamp(
-        contact.baseX + (dx / contact.width) * 2.4,
+        target.x + (dx / contact.width) * 2.9,
         -1,
         1,
       );
       target.y = THREE.MathUtils.clamp(
-        contact.baseY + (dy / contact.height) * 2,
+        target.y + (dy / contact.height) * 2.4,
         -1,
         1,
       );
       target.pressure = 1;
+      contact.x = x;
+      contact.y = y;
       return started;
     },
     end(id) {

@@ -302,8 +302,8 @@ export async function loadToro() {
     const x = pose.x * amount;
     const y = pose.y * amount;
     const pressure = pose.pressure * amount;
-    rotateJoint(body.neck, y * 0.025, x * 0.035, -x * 0.025);
-    rotateJoint(body.head, y * 0.11 + pressure * 0.025, x * 0.14, -x * 0.13);
+    rotateJoint(body.neck, y * 0.04, x * 0.055, -x * 0.04);
+    rotateJoint(body.head, y * 0.17 + pressure * 0.04, x * 0.23, -x * 0.21);
   }
 
   return {

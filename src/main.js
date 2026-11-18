@@ -223,9 +223,9 @@ async function startViewer() {
       document.documentElement.dataset.viewerState === "ready" &&
       !document.hidden,
     onStroke: () => {
-      state.expression = "content";
+      state.expression = "laugh";
       state.pose = "stand";
-      toro.setExpression(3);
+      toro.setExpression(4);
       selectButton("expression", state.expression);
       selectButton("pose", state.pose);
     },
