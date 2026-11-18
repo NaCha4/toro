@@ -26,11 +26,18 @@ npm run preview
 
 ## 조작
 
-- 드래그 또는 터치로 회전, 스크롤 또는 두 손가락으로 확대·축소
-- 방의 벽 밖으로 시점이 나가지 않도록 회전 범위를 제한
+- 카메라는 방 정면에 고정
+- 시작 시 등을 보이는 토로를 터치하면 돌아서 2번 표정으로 손을 흔들며 인사
+- 화면이 표시된 상태에서 3초간 기다리면 움직이는 터치 안내 표시
 - 표정 버튼으로 원본 텍스처 시트의 16가지 표정 선택
 - 기본, 인사, 춤추기 애니메이션 전환
-- 모델에 키보드 포커스를 둔 상태에서 방향키로 회전, `R`로 시점 초기화
+- 키보드로는 모델에 포커스를 두고 Enter 또는 Space로 인사 시작
+
+첫 인사 전환이 끝나면 컴퓨터의 표정·애니메이션 미리보기 버튼이 활성화됩니다. 모바일 진입 대기와 백그라운드에서는 시작 타이머가 진행되지 않습니다.
+
+인사는 5.8초 주기로 준비 동작, 팔 올리기, 손 흔들기, 팔 내리기와 잔동작을 이어갑니다. 비균등 키프레임과 3차 곡선 보간으로 흔드는 폭과 속도가 조금씩 달라집니다. 어깨, 팔꿈치, 손목과 고개에 시간차를 주고 손끝이 입체적인 호를 그리도록 구성했습니다. 고개, 상체, 골반과 양쪽 무릎이 함께 움직이며 발바닥 높이를 계산해 바닥 접촉을 유지합니다.
+
+브라우저에서 모델을 불러올 때 양쪽 손목 보조 관절과 부드러운 스킨 가중치를 추가합니다. 손목을 독립적으로 구부리고 회전시켜 팔꿈치 뒤에 따라오는 동작을 표현합니다.
 
 ## iPhone 12 mini와 전체화면
 
@@ -66,5 +73,11 @@ iPhone Safari는 일반 웹페이지의 Fullscreen API와 강제 방향 전환�
 [캐릭터 소개 — 비사이드](https://prtimes.jp/main/html/rd/p/000000073.000104705.html)
 
 [방 재현 참고 — 초기 작품 게임 화면](https://dengekionline.com/articles/7674/)
+
+[동작 원칙 — Adobe의 애니메이션 12원칙](https://www.adobe.com/creativecloud/animation/discover/principles-of-animation.html)
+
+[시간차와 후속 동작 — Animation Mentor](https://www.animationmentor.com/blog/tutorial-animate-overlap-and-follow-through/)
+
+[손 흔들기 영상과 FK 동작 해설 — Nick Kinteris](https://nickkinteris.com/2023/10/25/hand-waving/)
 
 [보안 및 배포 범위](SECURITY.md)

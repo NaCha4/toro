@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { createGreetingMotion } from "./greeting-motion.js";
+import { addWrist } from "./wrist.js";
 
 export const expressions = [
   { number: 1, id: "normal", label: "방긋", tile: 0 },
@@ -44,27 +46,89 @@ export async function loadToro() {
     surface.map.needsUpdate = true;
   }
   root.updateMatrixWorld(true);
-  const armBones = [];
+  addWrist(root, "L");
+  addWrist(root, "R");
   const delta = new THREE.Quaternion();
+  function captureJoint(name) {
+    const bone = root.getObjectByName(`Bip01_toro_${name}`);
+    if (!bone) throw new Error(`The supplied rig is missing ${name}`);
+    const parentRotation = bone.parent
+      .getWorldQuaternion(new THREE.Quaternion())
+      .invert();
+    return {
+      bone,
+      rest: bone.quaternion.clone(),
+      pitchAxis: new THREE.Vector3(1, 0, 0).applyQuaternion(parentRotation),
+      yawAxis: new THREE.Vector3(0, 1, 0).applyQuaternion(parentRotation),
+      rollAxis: new THREE.Vector3(0, 0, 1).applyQuaternion(parentRotation),
+    };
+  }
+
+  const armBones = [];
   for (const side of ["L", "R"]) {
     for (const part of ["UpperArm", "ForeArm"]) {
-      const bone = root.getObjectByName(`Bip01_toro_${side}_${part}`);
-      if (!bone) throw new Error("The supplied arm rig is incomplete");
-      const parentRotation = bone.parent.getWorldQuaternion(
-        new THREE.Quaternion(),
-      );
-      const axis = new THREE.Vector3(0, 0, 1).applyQuaternion(
-        parentRotation.invert(),
-      );
-      const position = bone.getWorldPosition(new THREE.Vector3());
+      const joint = captureJoint(`${side}_${part}`);
+      const position = joint.bone.getWorldPosition(new THREE.Vector3());
       armBones.push({
-        bone,
+        ...joint,
         part,
         side: Math.sign(position.x),
-        rest: bone.quaternion.clone(),
-        axis,
       });
     }
+  }
+  const body = {
+    pelvis: captureJoint("Pelvis"),
+    spine: captureJoint("Spine"),
+    neck: captureJoint("Neck"),
+    head: captureJoint("Head"),
+    leftShoulder: captureJoint("L_Clavicle"),
+    rightShoulder: captureJoint("R_Clavicle"),
+    leftWrist: captureJoint("L_Wrist"),
+    rightWrist: captureJoint("R_Wrist"),
+    leftThigh: captureJoint("L_Thigh"),
+    leftCalf: captureJoint("L_Calf"),
+    rightThigh: captureJoint("R_Thigh"),
+    rightCalf: captureJoint("R_Calf"),
+  };
+  const bodyJoints = Object.values(body);
+  const footPoint = new THREE.Vector3();
+  const feet = ["toro_lleg", "toro_rleg"].map((name) => {
+    const mesh = root.getObjectByName(name);
+    if (!mesh?.isSkinnedMesh)
+      throw new Error(`The supplied rig is missing ${name}`);
+    const positions = mesh.geometry.attributes.position;
+    const heights = [];
+    for (let index = 0; index < positions.count; index++) {
+      mesh.getVertexPosition(index, footPoint).applyMatrix4(mesh.matrixWorld);
+      heights.push(footPoint.y);
+    }
+    const bottom = Math.min(...heights);
+    return {
+      mesh,
+      // Keep the sole vertices so knee bends can stay in contact with the floor.
+      vertices: heights.flatMap((height, index) =>
+        height < bottom + 0.08 ? [index] : [],
+      ),
+    };
+  });
+
+  function rotateJoint(joint, pitch, yaw, roll) {
+    joint.bone.quaternion
+      .premultiply(delta.setFromAxisAngle(joint.pitchAxis, pitch))
+      .premultiply(delta.setFromAxisAngle(joint.yawAxis, yaw))
+      .premultiply(delta.setFromAxisAngle(joint.rollAxis, roll));
+  }
+
+  function groundFeet() {
+    root.updateMatrixWorld(true);
+    let bottom = Infinity;
+    for (const { mesh, vertices } of feet) {
+      for (const index of vertices) {
+        mesh.getVertexPosition(index, footPoint).applyMatrix4(mesh.matrixWorld);
+        bottom = Math.min(bottom, footPoint.y);
+      }
+    }
+    root.position.y -= bottom;
   }
 
   function setExpression(id) {
@@ -80,17 +144,86 @@ export async function loadToro() {
     }
   }
 
-  function animate(time, pose, motion = true) {
+  let previousPose;
+  let poseStartedAt = 0;
+  const sampleGreeting = createGreetingMotion();
+  function animate(time, pose, motion = true, poseBlend = 1) {
+    if (pose !== previousPose) {
+      previousPose = pose;
+      poseStartedAt = time;
+    }
     const sway = motion ? Math.sin(time * 1.8) : 0;
+    const greeting = sampleGreeting(time - poseStartedAt, motion, poseBlend);
     root.rotation.y = pose === "dance" ? sway * 0.1 : 0;
+    root.position.x = 0;
     root.position.y = pose === "dance" ? Math.abs(sway) * 0.04 : 0;
+    for (const joint of bodyJoints) joint.bone.quaternion.copy(joint.rest);
+
+    if (pose === "wave") {
+      root.rotation.y =
+        greeting.weight * 0.065 + greeting.shoulderSwing * 0.008;
+      root.position.x = greeting.weight * -0.035;
+      rotateJoint(
+        body.pelvis,
+        greeting.weight * 0.02,
+        0,
+        greeting.weight * 0.015,
+      );
+      rotateJoint(
+        body.spine,
+        greeting.chest * -0.015 + greeting.nod * 0.04,
+        0,
+        greeting.chest * 0.065 + greeting.shoulderSwing * 0.012,
+      );
+      rotateJoint(body.neck, greeting.head * 0.03, greeting.head * -0.035, 0);
+      rotateJoint(
+        body.head,
+        greeting.head * 0.03 + greeting.nod * 0.12,
+        0,
+        greeting.head * -0.13 - greeting.wristSwing * 0.022,
+      );
+      rotateJoint(
+        body.leftShoulder,
+        greeting.lift * -0.04,
+        greeting.lift * -0.07,
+        greeting.lift * 0.025 + greeting.shoulderSwing * 0.015,
+      );
+      rotateJoint(body.rightShoulder, 0, 0, greeting.chest * -0.015);
+      rotateJoint(
+        body.leftWrist,
+        greeting.wristLift * 0.06 + greeting.palmTwist * 0.1,
+        greeting.wristLift * -0.1 + greeting.palmTwist * 0.14,
+        greeting.wristLift * 0.04 + greeting.wristSwing * 0.42,
+      );
+      rotateJoint(
+        body.rightWrist,
+        0,
+        0,
+        greeting.chest * -0.09 - greeting.elbowSwing * 0.025,
+      );
+      const leftKnee = greeting.weight * 0.16 + greeting.nod * 0.08;
+      const rightKnee = greeting.weight * 0.1 + greeting.nod * 0.06;
+      rotateJoint(body.leftThigh, -leftKnee * 0.5, 0, greeting.weight * -0.01);
+      rotateJoint(body.leftCalf, leftKnee, 0, 0);
+      rotateJoint(body.rightThigh, -rightKnee * 0.5, 0, greeting.weight * 0.01);
+      rotateJoint(body.rightCalf, rightKnee, 0, 0);
+    }
+
     for (const arm of armBones) {
-      let angle = arm.part === "UpperArm" ? -arm.side * 1.35 : 0;
+      const restingAngle = arm.part === "UpperArm" ? -arm.side * 1.35 : 0;
+      let angle = restingAngle;
       if (pose === "wave" && arm.side > 0) {
-        angle =
+        const raisedAngle =
           arm.part === "UpperArm"
-            ? arm.side * 0.15
-            : arm.side * (1.1 + sway * 0.22);
+            ? 0.04 + greeting.shoulderSwing * 0.07
+            : 0.92 + greeting.elbowSwing * 0.12;
+        const lift =
+          arm.part === "UpperArm" ? greeting.lift : greeting.elbowLift;
+        angle = THREE.MathUtils.lerp(restingAngle, raisedAngle, lift);
+      } else if (pose === "wave") {
+        angle +=
+          greeting.chest * (arm.part === "UpperArm" ? -0.11 : -0.2) -
+          greeting.elbowSwing * 0.02;
       }
       if (pose === "dance") {
         angle =
@@ -100,8 +233,17 @@ export async function loadToro() {
       }
       arm.bone.quaternion
         .copy(arm.rest)
-        .premultiply(delta.setFromAxisAngle(arm.axis, angle));
+        .premultiply(delta.setFromAxisAngle(arm.rollAxis, angle));
+      if (pose === "wave" && arm.side > 0) {
+        rotateJoint(
+          arm,
+          greeting.lift * -0.035,
+          greeting.elbowLift * -0.085 + greeting.shoulderSwing * 0.025,
+          0,
+        );
+      }
     }
+    if (pose === "wave") groundFeet();
   }
 
   return { root, setExpression, animate };

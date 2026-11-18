@@ -31,11 +31,11 @@ canvas {
   display: block;
   width: 100%;
   height: 100%;
-  cursor: grab;
+  cursor: default;
   touch-action: none;
 }
-canvas:active {
-  cursor: grabbing;
+#viewer[data-greeting-state="waiting"] canvas {
+  cursor: pointer;
 }
 button {
   font: inherit;
@@ -113,6 +113,85 @@ html:not([data-viewer-state="ready"]) .controls,
 html:not([data-viewer-state="ready"]) #loading {
   visibility: hidden;
   pointer-events: none;
+}
+html:not([data-viewer-state="ready"]) #tap-hint {
+  visibility: hidden;
+  pointer-events: none;
+}
+#tap-hint {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 58%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 17px 9px 12px;
+  border: 1px solid #ddd8be;
+  border-radius: 30px;
+  background: #fffdf1ef;
+  box-shadow: 0 5px 22px #3c36252b;
+  color: #4d543f;
+  font-size: 14px;
+  font-weight: 600;
+  animation: touch-guide 1.4s ease-in-out infinite;
+}
+#tap-hint[hidden] {
+  display: none;
+}
+.tap-symbol {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 31px;
+  height: 34px;
+  font-size: 29px;
+}
+.tap-symbol::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 10px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #839063;
+  border-radius: 50%;
+  animation: touch-ring 1.4s ease-out infinite;
+}
+.controls button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+@keyframes touch-guide {
+  0%,
+  100% {
+    transform: translate(-50%, 0);
+  }
+  50% {
+    transform: translate(-50%, -6px);
+  }
+}
+@keyframes touch-ring {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #tap-hint,
+  .tap-symbol::before {
+    animation: none;
+  }
+  #tap-hint {
+    transform: translateX(-50%);
+  }
 }
 html[data-viewer-state="pending"] .fullscreen-button {
   visibility: hidden;

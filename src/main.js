@@ -1,9 +1,9 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { loadToro, expressions } from "./toro.js";
 import { createRoom } from "./room.js";
 import { setupDisplayMode } from "./display.js";
+import { createGreetingSequence } from "./greeting.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { SSAOPass } from "three/addons/postprocessing/SSAOPass.js";
@@ -39,7 +39,7 @@ async function startViewer() {
   renderer.domElement.setAttribute("role", "img");
   renderer.domElement.setAttribute(
     "aria-label",
-    "다다미 방 안에 서 있는 토로. 드래그 또는 방향키로 둘러보기, 스크롤로 확대, R 키로 시점 초기화.",
+    "등을 보인 토로. 터치하거나 Enter 키를 눌러 인사해 주세요.",
   );
   viewport.append(renderer.domElement);
 
@@ -72,19 +72,8 @@ async function startViewer() {
   scene.add(windowLight);
 
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  const orbit = new OrbitControls(camera, renderer.domElement);
-  orbit.enableDamping = true;
-  orbit.enablePan = false;
-  orbit.minDistance = 9;
-  orbit.maxDistance = 15;
-  orbit.minPolarAngle = 1.2;
-  orbit.maxPolarAngle = 1.52;
-  orbit.minAzimuthAngle = -0.2;
-  orbit.maxAzimuthAngle = 0.33;
-  orbit.target.set(0, 2.5, -0.7);
-  camera.position.set(2.6, 4.1, 12.0);
-  orbit.update();
-  orbit.saveState();
+  camera.position.set(0, 3.8, 12);
+  camera.lookAt(0, 2.5, -0.7);
   const target = new THREE.WebGLRenderTarget(1, 1, {
     type: THREE.HalfFloatType,
     samples: 4,
@@ -134,6 +123,7 @@ async function startViewer() {
   for (const expression of expressions) {
     const button = document.createElement("button");
     button.type = "button";
+    button.disabled = true;
     button.dataset.expression = expression.id;
     button.dataset.expressionNumber = String(expression.number);
     button.setAttribute(
@@ -160,44 +150,59 @@ async function startViewer() {
   }
   selectButton("expression", state.expression);
   document.querySelectorAll("[data-pose]").forEach((button) => {
+    button.disabled = true;
     button.addEventListener("click", () => {
       state.pose = button.dataset.pose;
       selectButton("pose", state.pose);
     });
   });
 
-  renderer.domElement.addEventListener("keydown", (event) => {
-    if (event.key.toLowerCase() === "r") {
-      orbit.reset();
-      event.preventDefault();
+  const viewer = document.querySelector("#viewer");
+  const hint = document.querySelector("#tap-hint");
+  const previewButtons = document.querySelectorAll(
+    "[data-pose], [data-expression]",
+  );
+  const greeting = createGreetingSequence(() => {
+    state.pose = "wave";
+    selectButton("pose", state.pose);
+    previewButtons.forEach((button) => {
+      button.disabled = false;
+    });
+    renderer.domElement.setAttribute("role", "img");
+    renderer.domElement.setAttribute("aria-label", "다다미 방 안의 토로");
+  });
+  viewer.dataset.greetingState = greeting.phase;
+  renderer.domElement.setAttribute("role", "button");
+  toro.animate(0, "stand", false);
+  toro.root.rotation.y = greeting.heading;
+
+  function beginGreeting() {
+    if (
+      document.documentElement.dataset.viewerState !== "ready" ||
+      greeting.phase !== "waiting"
+    )
       return;
+    renderer.domElement.setAttribute(
+      "aria-label",
+      "토로가 돌아서 인사하고 있어요",
+    );
+    greeting.start(reducedMotion.matches);
+    state.expression = "smile";
+    toro.setExpression(2);
+    selectButton("expression", state.expression);
+    hint.hidden = true;
+    viewer.dataset.greetingState = greeting.phase;
+  }
+
+  renderer.domElement.addEventListener("pointerdown", (event) => {
+    if (event.isPrimary !== false && event.button === 0) beginGreeting();
+  });
+  hint.addEventListener("click", beginGreeting);
+  renderer.domElement.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      beginGreeting();
     }
-    const spherical = new THREE.Spherical().setFromVector3(
-      camera.position.clone().sub(orbit.target),
-    );
-    const increments = {
-      ArrowLeft: [-0.12, 0],
-      ArrowRight: [0.12, 0],
-      ArrowUp: [0, -0.12],
-      ArrowDown: [0, 0.12],
-    };
-    if (!increments[event.key]) return;
-    event.preventDefault();
-    spherical.theta += increments[event.key][0];
-    spherical.phi = THREE.MathUtils.clamp(
-      spherical.phi + increments[event.key][1],
-      orbit.minPolarAngle,
-      orbit.maxPolarAngle,
-    );
-    spherical.theta = THREE.MathUtils.clamp(
-      spherical.theta,
-      orbit.minAzimuthAngle,
-      orbit.maxAzimuthAngle,
-    );
-    camera.position
-      .copy(orbit.target)
-      .add(new THREE.Vector3().setFromSpherical(spherical));
-    orbit.update();
   });
   renderer.domElement.addEventListener("webglcontextlost", (event) => {
     event.preventDefault();
@@ -207,12 +212,27 @@ async function startViewer() {
 
   const timer = new THREE.Timer();
   timer.connect(document);
+  let activeTime = 0;
   renderer.setAnimationLoop(() => {
-    if (document.documentElement.dataset.viewerState !== "ready") return;
     timer.update();
-    toro.animate(timer.getElapsed(), state.pose, !reducedMotion.matches);
-    room.animate(timer.getElapsed(), !reducedMotion.matches);
-    orbit.update();
+    if (
+      document.documentElement.dataset.viewerState !== "ready" ||
+      document.hidden
+    )
+      return;
+    const delta = timer.getDelta();
+    activeTime += delta;
+    greeting.update(delta, reducedMotion.matches);
+    viewer.dataset.greetingState = greeting.phase;
+    hint.hidden = !greeting.hintVisible;
+    toro.animate(
+      activeTime,
+      state.pose,
+      !reducedMotion.matches,
+      greeting.waveBlend,
+    );
+    toro.root.rotation.y += greeting.heading;
+    room.animate(activeTime, !reducedMotion.matches);
     composer.render();
   });
   loading.hidden = true;
