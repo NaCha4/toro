@@ -16,7 +16,7 @@ export function updateCameraFraming(
     3.6 / camera.aspect,
   );
   const faceHalfHeight = Math.max(
-    (0.95 * height) / availableHeight,
+    (0.73 * height) / availableHeight,
     1.05 / camera.aspect,
   );
   const roomFov = 2 * Math.atan(roomHalfHeight / 13.1);

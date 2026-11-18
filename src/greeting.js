@@ -6,7 +6,7 @@ const PAUSE_DURATION = 1;
 const APPROACH_DURATION = 4.2;
 const WAVE_BLEND_DURATION = 0.35;
 export const START_TORO_Z = 0.9;
-export const CLOSEUP_TORO_Z = 10.7;
+export const CLOSEUP_TORO_Z = 10.2;
 
 const durations = {
   turning: TURN_DURATION,
