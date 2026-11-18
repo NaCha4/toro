@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { loadToro, expressions } from "./toro.js";
+import { loadToro } from "./toro.js";
 import { createRoom } from "./room.js";
 import { setupDisplayMode } from "./display.js";
 import {
@@ -22,18 +22,9 @@ import "./word-room.css";
 
 const viewport = document.querySelector("#viewport");
 const loading = document.querySelector("#loading");
-const controlsPanel = document.querySelector(".controls");
 const state = { expression: "normal", pose: "stand" };
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 setupDisplayMode();
-
-function selectButton(attribute, value) {
-  document.querySelectorAll(`[data-${attribute}]`).forEach((button) => {
-    const selected = button.dataset[attribute] === value;
-    button.classList.toggle("selected", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  });
-}
 
 async function startViewer() {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -98,20 +89,14 @@ async function startViewer() {
   composer.addPass(new OutputPass());
 
   let closeupProgress = 0;
-  let panelHeight = 0;
   function resize() {
     const width = viewport.clientWidth;
     const height = viewport.clientHeight;
-    const panelBounds = controlsPanel.getBoundingClientRect();
-    panelHeight = controlsPanel.hidden
-      ? 0
-      : height - panelBounds.top + viewport.getBoundingClientRect().top;
-    updateCameraFraming(camera, width, height, panelHeight, closeupProgress);
+    updateCameraFraming(camera, width, height, 0, closeupProgress);
     renderer.setSize(width, height);
     composer.setSize(width, height);
   }
   new ResizeObserver(resize).observe(viewport);
-  new ResizeObserver(resize).observe(controlsPanel);
   window.visualViewport?.addEventListener("resize", resize);
   resize();
 
@@ -128,7 +113,6 @@ async function startViewer() {
   const cheerMenu = document.querySelector("#cheer-menu");
   const choices = [...cheerMenu.querySelectorAll("button")];
   const danceButton = document.querySelector("#cheer-dance");
-  let previewUsesDanceFace = false;
   const giftLabels = {
     presenting: "리본 선물상자를 터치해서 열어 주세요",
     gift_burst: "선물상자에서 케이크와 응원카드가 나와요",
@@ -174,15 +158,9 @@ async function startViewer() {
     ].includes(phase) ? "delighted" : "normal";
     state.pose = phase === "dancing" ? "dance" : "stand";
     cheerMenu.hidden = phase !== "dance_ready";
-    if (phase === "turn_back_to_fridge") viewer.classList.add("cheer-finale");
     if (!cheerMenu.hidden && document.activeElement === renderer.domElement)
       cheerMenu.querySelector(".current").focus({ preventScroll: true });
     toro.setExpression(state.expression);
-    selectButton("expression", state.expression);
-    selectButton("pose", state.pose);
-    previewButtons.forEach((button) => {
-      button.disabled = true;
-    });
     viewer.dataset.inputLocked = "true";
     viewer.dataset.giftState = phase;
     renderer.domElement.setAttribute(
@@ -244,58 +222,10 @@ async function startViewer() {
     if (roomIsReady() && giftScene.startSakeDelivery())
       renderer.domElement.focus({ preventScroll: true });
   });
-  const expressionControls = document.querySelector("#expression-controls");
-  for (const expression of expressions) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.disabled = true;
-    button.dataset.expression = expression.id;
-    button.dataset.expressionNumber = String(expression.number);
-    button.setAttribute(
-      "aria-label",
-      `${expression.number}번 ${expression.label}`,
-    );
-    button.title = `${expression.number}번 ${expression.label}`;
-    const preview = document.createElement("span");
-    preview.className = "expression-preview";
-    preview.style.backgroundImage = `url("${new URL("toro-expressions.png", document.baseURI).href}")`;
-    preview.style.backgroundPosition = `${((expression.tile % 4) * 100) / 3}% ${(Math.floor(expression.tile / 4) * 100) / 3}%`;
-    preview.setAttribute("aria-hidden", "true");
-    const number = document.createElement("span");
-    number.className = "expression-number";
-    number.textContent = String(expression.number);
-    number.setAttribute("aria-hidden", "true");
-    button.append(preview, number);
-    button.addEventListener("click", () => {
-      if (giftScene.active) return;
-      previewUsesDanceFace = false;
-      petting.cancel();
-      state.expression = expression.id;
-      toro.setExpression(state.expression);
-      selectButton("expression", state.expression);
-    });
-    expressionControls.append(button);
-  }
-  selectButton("expression", state.expression);
-  document.querySelectorAll("[data-pose]").forEach((button) => {
-    button.disabled = true;
-    button.addEventListener("click", () => {
-      if (giftScene.active) return;
-      state.pose = button.dataset.pose;
-      previewUsesDanceFace = state.pose === "dance";
-      petting.setEnabled(!previewUsesDanceFace);
-      renderer.domElement.setAttribute("aria-label", previewUsesDanceFace
-        ? "수능 응원 춤을 추는 토로" : phaseLabels.closeup);
-      selectButton("pose", state.pose);
-    });
-  });
 
   const viewer = document.querySelector("#viewer");
   const hint = document.querySelector("#tap-hint");
   const petHint = document.querySelector("#pet-hint");
-  const previewButtons = document.querySelectorAll(
-    "[data-pose], [data-expression]",
-  );
   const phasePoses = {
     turning: "stand",
     greeting: "wave",
@@ -317,11 +247,6 @@ async function startViewer() {
     state.expression =
       phase === "turning" || phase === "greeting" ? "smile" : "normal";
     toro.setExpression(state.expression);
-    selectButton("expression", state.expression);
-    selectButton("pose", state.pose);
-    previewButtons.forEach((button) => {
-      button.disabled = phase !== "closeup";
-    });
     renderer.domElement.setAttribute("role", "img");
     renderer.domElement.setAttribute("aria-label", phaseLabels[phase]);
   });
@@ -373,8 +298,6 @@ async function startViewer() {
       state.expression = "laugh";
       state.pose = "stand";
       toro.setExpression(4);
-      selectButton("expression", state.expression);
-      selectButton("pose", state.pose);
     },
     onComplete: () => giftScene.start(),
   });
@@ -409,21 +332,24 @@ async function startViewer() {
     wordRoom.update(delta);
     petting.update(delta);
     greeting.update(delta, reducedMotion.matches);
-    closeupProgress = state.pose === "dance" && !giftScene.active ? 0 : greeting.approachProgress;
+    closeupProgress = greeting.approachProgress;
     viewer.dataset.greetingState = greeting.phase;
     hint.hidden = !greeting.hintVisible;
     petHint.hidden = !petting.hintVisible;
     viewer.dataset.pettingState = petting.rubbing ? "rubbing" : "idle";
-    let animatedExpression;
     if (giftScene.active) {
       closeupProgress = giftScene.animate(
         delta,
         activeTime,
         !reducedMotion.matches,
       );
-      animatedExpression = giftScene.expression;
+      const face = giftScene.expression;
+      if (face && state.expression !== face) {
+        state.expression = face;
+        toro.setExpression(face);
+      }
     } else {
-      const previewFace = toro.animate(
+      toro.animate(
         activeTime,
         state.pose,
         !reducedMotion.matches,
@@ -432,7 +358,6 @@ async function startViewer() {
           : 1,
         closeupProgress,
       );
-      if (previewUsesDanceFace) animatedExpression = previewFace;
       toro.root.position.z = THREE.MathUtils.lerp(
         START_TORO_Z,
         CLOSEUP_TORO_Z,
@@ -440,17 +365,12 @@ async function startViewer() {
       );
       toro.root.rotation.y += greeting.heading;
     }
-    if (animatedExpression && state.expression !== animatedExpression) {
-      state.expression = animatedExpression;
-      toro.setExpression(animatedExpression);
-      selectButton("expression", animatedExpression);
-    }
     toro.applyPetting(petting.pose, reducedMotion.matches ? 0.55 : 1);
     updateCameraFraming(
       camera,
       viewport.clientWidth,
       viewport.clientHeight,
-      panelHeight,
+      0,
       closeupProgress,
     );
     if (giftScene.active) {
@@ -458,7 +378,7 @@ async function startViewer() {
         camera,
         viewport.clientWidth,
         viewport.clientHeight,
-        panelHeight,
+        0,
       );
       toro.applyConversation(viewer.dataset.wordGesture, activeTime, delta, !reducedMotion.matches);
       conversationFrame = reducedMotion.matches ? Number(wordRoom.active) :

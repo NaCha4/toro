@@ -81,29 +81,6 @@ canvas:focus-visible {
 #loading[hidden] {
   display: none;
 }
-.controls {
-  position: fixed;
-  z-index: 2;
-  left: 50%;
-  bottom: max(22px, env(safe-area-inset-bottom));
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 16px 22px;
-  border: 1px solid #dedfd8;
-  border-radius: 19px;
-  background: #fffffff2;
-  box-shadow: 0 8px 36px #2430240a;
-  max-width: calc(
-    100% - max(16px, env(safe-area-inset-left)) -
-      max(16px, env(safe-area-inset-right))
-  );
-  backdrop-filter: blur(14px);
-}
-.controls[hidden] {
-  display: none;
-}
 .fullscreen-button {
   position: absolute;
   z-index: 4;
@@ -128,7 +105,6 @@ canvas:focus-visible {
   display: none;
 }
 html:not([data-viewer-state="ready"]) #viewport,
-html:not([data-viewer-state="ready"]) .controls,
 html:not([data-viewer-state="ready"]) #loading {
   visibility: hidden;
   pointer-events: none;
@@ -138,9 +114,6 @@ html:not([data-viewer-state="ready"]) #pet-hint,
 html:not([data-viewer-state="ready"]) #cheer-menu {
   visibility: hidden;
   pointer-events: none;
-}
-#viewer.cheer-finale .controls {
-  visibility: hidden;
 }
 #cheer-menu {
   position: absolute;
@@ -289,10 +262,6 @@ html:not([data-viewer-state="ready"]) #cheer-menu {
   border-radius: 50%;
   animation: touch-ring 1.4s ease-out infinite;
 }
-.controls button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
 @keyframes touch-guide {
   0%,
   100% {
@@ -378,174 +347,7 @@ html[data-viewer-state="blocked"] .fullscreen-button {
   border-radius: 8px;
   background: #e4ebd8;
 }
-.control-section {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.control-label {
-  font-size: 11px;
-  color: #7e8477;
-  white-space: nowrap;
-}
-.expression-grid {
-  display: grid;
-  grid-template-columns: repeat(8, 44px);
-  gap: 3px;
-}
-.expression-grid button {
-  display: grid;
-  grid-template-rows: 34px 16px;
-  gap: 2px;
-  place-items: center;
-  width: 44px;
-  height: 61px;
-  padding: 3px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-}
-.expression-number {
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  color: #536047;
-}
-.expression-grid button:hover {
-  background: #f0f2e8;
-}
-.expression-grid button.selected {
-  background: #e9efdc;
-  border-color: #9eb581;
-}
-.expression-preview {
-  display: block;
-  width: 34px;
-  height: 34px;
-  border-radius: 4px;
-  background-size: 400% 400%;
-}
-.animation-section {
-  padding-left: 23px;
-  border-left: 1px solid #e5e7df;
-}
-.animation-buttons {
-  display: flex;
-  gap: 4px;
-}
-.animation-buttons button {
-  border: 1px solid transparent;
-  background: transparent;
-  padding: 10px 13px;
-  border-radius: 8px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.animation-buttons button:hover {
-  background: #f0f2e8;
-}
-.animation-buttons button.selected {
-  background: #e9efdc;
-  border-color: #c6d4b2;
-  color: #465d34;
-}
-@media (max-width: 760px) {
-  .controls {
-    gap: 12px;
-    padding: 12px 14px;
-    flex-direction: column;
-    bottom: max(12px, env(safe-area-inset-bottom));
-  }
-  .control-section {
-    gap: 10px;
-  }
-  .expression-grid {
-    grid-template-columns: repeat(8, 34px);
-    gap: 2px;
-  }
-  .expression-grid button {
-    width: 34px;
-    height: 47px;
-    grid-template-rows: 28px 13px;
-    padding: 2px;
-  }
-  .expression-preview {
-    width: 28px;
-    height: 28px;
-  }
-  .animation-section {
-    border-left: 0;
-    border-top: 1px solid #e5e7df;
-    padding: 10px 0 0;
-    width: 100%;
-    justify-content: space-between;
-  }
-  .animation-buttons button {
-    padding: 8px 13px;
-    font-size: 11px;
-  }
-  .control-label {
-    font-size: 10px;
-  }
-}
-@media (max-width: 370px) {
-  .controls {
-    max-width: calc(100% - 16px);
-    padding: 10px;
-  }
-  .expression-grid {
-    grid-template-columns: repeat(8, 30px);
-  }
-  .expression-grid button {
-    width: 30px;
-    height: 45px;
-    grid-template-rows: 26px 13px;
-  }
-  .expression-preview {
-    width: 26px;
-    height: 26px;
-  }
-}
 @media (orientation: landscape) and (max-height: 500px) {
-  .controls {
-    bottom: max(6px, env(safe-area-inset-bottom));
-    flex-direction: row;
-    gap: 12px;
-    padding: 6px 10px;
-    border-radius: 12px;
-  }
-  .control-label {
-    display: none;
-  }
-  .control-section {
-    gap: 0;
-  }
-  .expression-grid {
-    grid-template-columns: repeat(8, 33px);
-    gap: 2px;
-  }
-  .expression-grid button {
-    width: 33px;
-    height: 44px;
-    grid-template-rows: 27px 12px;
-    padding: 1px;
-  }
-  .expression-preview {
-    width: 27px;
-    height: 27px;
-  }
-  .animation-section {
-    border-top: 0;
-    border-left: 1px solid #e5e7df;
-    padding: 0 0 0 12px;
-    width: auto;
-  }
-  .animation-buttons button {
-    min-height: 38px;
-    padding: 8px 11px;
-    font-size: 11px;
-  }
   .fullscreen-button {
     min-height: 34px;
     padding: 5px 9px;

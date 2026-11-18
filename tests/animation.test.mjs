@@ -240,6 +240,7 @@ test("the present stays inside the closed fridge and follows both paws after pic
   const card = room.root.getObjectByName("수능 응원카드").children[0];
   for (const [width, height, panelHeight] of [
     [812, 375, 0],
+    [1440, 760, 0],
     [1440, 760, 180],
   ]) {
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
@@ -467,7 +468,7 @@ test("Toro crosses the open entrance, pours five cups to his mouth and takes the
   assert.ok(!tray.visible && !parcel.visible);
 });
 
-test("the desktop preview and menu share the same dance poses and timing", async () => {
+test("the standalone animation and menu share the same dance poses and timing", async () => {
   const preview = await loadTestToro();
   const menu = await loadTestToro();
   preview.animate(21, "dance");
@@ -602,6 +603,7 @@ test("a delayed frame completes each sequence phase in order", () => {
 test("the room fits the back wall and the closeup keeps the camera frontal", () => {
   for (const [width, height, panelHeight] of [
     [812, 375, 0],
+    [1440, 760, 0],
     [1440, 760, 180],
     [447, 447, 0],
   ]) {
